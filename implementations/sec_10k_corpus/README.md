@@ -5,13 +5,14 @@ is the real-data side of a synthetic-10-K benchmark: it provides style templates
 set, and XBRL facts.
 
 **Status:** Steps 1-5 (project setup, 10-K download, section parsing, metadata index, XBRL
-companyfacts) and Phases 3-7 (calibration profile, fictional-company specs, a scenario per company,
-financial statements, narrative generation, validation) are implemented. 13/20 fictional companies
-have a scenario (M&A, a product launch, a regulatory event, and so on) grounding their narrative in
-something beyond generic sector boilerplate; the other 7 are an explicit ordinary-course baseline.
-All 20 pass every automatic validation gate (`data/synthetic/`, `data/validation_report.csv`). See
-`PLAN.md` for detail; the summary script and Phase 7's human review (the one validation gate that
-isn't automatable) come next.
+companyfacts) and Phases 3-8 (calibration profile, fictional-company specs, a scenario per company,
+financial statements, narrative generation, validation, same-layout index) are implemented. 13/20
+fictional companies have a scenario (M&A, a product launch, a regulatory event, and so on)
+grounding their narrative in something beyond generic sector boilerplate; the other 7 are an
+explicit ordinary-course baseline. All 20 pass every automatic validation gate (`data/synthetic/`,
+`data/validation_report.csv`), and `data/index.csv` now indexes both corpora (one `source` column,
+`real` or `synthetic`). See `PLAN.md` for detail; the summary script, Phase 7's human review (the
+one validation gate that isn't automatable), and Phase 9's QA/retrieval evaluation come next.
 
 ## Layout
 
@@ -27,7 +28,7 @@ src/
   step00_sample_companies.py  reproducibly sample config.yaml's 50-ticker company list
   step01_download_10k.py      download 10-K filings
   step02_parse_sections.py    split 10-K text into Items 1, 1A, 1C, 7, 8
-  step03_build_index.py       data/index.csv, one row per parsed section
+  step03_build_index.py       data/index.csv, one row per parsed section, real + synthetic (Phase 8)
   step04_fetch_companyfacts.py  download XBRL companyfacts per company
   step05_make_calibration.py  data/calibration.json from companyfacts (Phase 3)
   step06_make_specs.py        fictional-company specs from calibration.json (Phase 4)
@@ -35,19 +36,21 @@ src/
   step07_make_financials.py   balance sheet, income statement, cash flow (Phase 5)
   step08_generate_filings.py  Claude API narrative generation (Phase 6, built but not run)
   step09_validate_filings.py  automatic validation gates: numeric, leaks, headings (Phase 7)
+  step10_build_pdfs.py        renders each filing (real-style cover + Items 1/1A/1C/7/8) to a PDF
 data/
   sp500_constituents.csv frozen S&P 500 snapshot src.step00_sample_companies samples from (committed)
   raw/{ticker}/{fy}/     10k.htm, 10k.txt, ex13_*.htm (if any), metadata.json
   parsed/{ticker}/{fy}/  item_1.txt, item_1a.txt, item_1c.txt, item_7.txt, item_8.txt
   companyfacts/{ticker}.json   raw XBRL companyfacts per company (git-ignored, ~180 MB)
   calibration.json       percentile distributions and per-company-year records (committed)
-  index.csv              one row per parsed section (git-ignored, reproduce when needed)
+  index.csv              one row per parsed section, real + synthetic (git-ignored, reproduce when needed)
   download_status.csv    one row per company-year from the last download run
   parse_status.csv       one row per company-year-item from the last parse run
   companyfacts_status.csv one row per company from the last companyfacts fetch
   synthetic/{fictional_id}/{fy}/spec.json        fictional-company specs (committed)
   synthetic/{fictional_id}/{fy}/financials.json  its 3 financial statements (committed)
   validation_report.csv  one row per fictional company x check from the last validation run
+  pdf_reports/{fictional_id}_{fy}.pdf  rendered filing, one PDF per company-year (git-ignored, derived)
 logs/                    per-script log files
 ```
 
@@ -118,8 +121,11 @@ python -m src.step04_fetch_companyfacts
 ```
 
 - `step03_build_index.py` writes `data/index.csv`, one row per parsed section (ticker, company name,
-  CIK, fiscal year, filing date, accession number, item, path, character count, word count).
-  Local and fast; always rewrites the whole file.
+  CIK, fiscal year, filing date, accession number, item, path, character count, word count,
+  source). Local and fast; always rewrites the whole file. Also indexes
+  `data/synthetic/{fictional_id}/{fy}/item_*.txt` (Phase 8) — `source` is `real` or `synthetic`,
+  and CIK/filing date/accession number are blank on synthetic rows since there's no real-world
+  equivalent. Re-run it after the synthetic corpus changes, not just after the real one.
 - `step04_fetch_companyfacts.py` downloads each company's XBRL companyfacts JSON from
   `data.sec.gov/api/xbrl/companyfacts/`, using the CIK from its already-downloaded
   `metadata.json`. Re-running skips any ticker whose file already exists.
@@ -220,7 +226,7 @@ python -m src.step09_validate_filings
 ```
 
 - Writes `data/validation_report.csv` (committed): one row per fictional company per check. Current
-  result: 0 failures across 360 checks on all 20 companies.
+  result: 0 failures across 373 checks on all 20 companies.
 - Checks every dollar figure and percentage quoted in Item 7 and Item 8 against `financials.json`
   (a leaf value, a handful of named combinations such as "total debt," or a standard ratio like net
   margin), that no real template company's name or ticker appears, that Item 8 has all three
@@ -230,6 +236,29 @@ python -m src.step09_validate_filings
   section by a deliberate choice (see `PLAN.md` Phase 6).
 - Covers Phase 7's two automatic/model-judged gates; human review of about 10 filings is the one
   gate this script can't do. See `PLAN.md` Phase 7.
+
+## Add the synthetic corpus to the index (Phase 8)
+
+```bash
+python -m src.step03_build_index
+```
+
+- Re-running `step03_build_index.py` after the synthetic corpus exists appends its rows to the
+  same `data/index.csv` used for the real corpus, each tagged `source = synthetic`; `cik`,
+  `filing_date`, and `accession_number` are blank on those rows. Current result: 829 rows (729
+  real, 100 synthetic — 20 companies x 5 items). Retrieval code (Phase 9) filters on `source`
+  rather than needing a second index. See `PLAN.md` Phase 8.
+
+## Render fictional filings as PDFs (optional)
+
+```bash
+python -m src.step10_build_pdfs
+```
+
+- Writes `data/pdf_reports/{fictional_id}_{fy}.pdf` (git-ignored, derived): a disclaimer cover
+  page plus Items 1/1A/1C/7/8, with the narrative's `label | value` lines rendered as real tables.
+  Not part of the Phase 1-9 pipeline; built for sharing individual filings outside the repo (e.g.
+  dragging them into a shared Google Drive folder). Requires `pandoc` and `xelatex` on `PATH`.
 
 ## Notes
 
@@ -247,8 +276,8 @@ python -m src.step09_validate_filings
 - Git tracks `metadata.json` files, `data/download_status.csv`, `data/parse_status.csv`,
   `data/companyfacts_status.csv`, `data/calibration.json`, `data/synthetic/`, and
   `data/validation_report.csv`. The filing and
-  section text (`10k.htm`, `10k.txt`, `ex13_*`, `data/parsed/`), `data/companyfacts/*.json`, and
-  `data/index.csv` and `logs/` are git-ignored, and are all reproducible by re-running the
-  matching script.
+  section text (`10k.htm`, `10k.txt`, `ex13_*`, `data/parsed/`), `data/companyfacts/*.json`,
+  `data/index.csv`, `data/pdf_reports/`, and `logs/` are git-ignored, and are all reproducible by
+  re-running the matching script.
 - See `PLAN.md` for the full plan and open questions, and `SECTIONS.md` for which 10-K items
   are parsed and why.

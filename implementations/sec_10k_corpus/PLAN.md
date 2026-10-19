@@ -11,7 +11,7 @@ a real-data benchmark.
 | 1 | Project setup, config, identity handling | Done |
 | 2 | Download 10-K filings from EDGAR | Done: 50 companies x FY2023-2025 (150 company-years, 147 filings, 3 not found) |
 | 3 | Parse filings into sections (Items 1, 1A, 1C, 7, 8) | Done: 724/735 sections ok, 5 short, 6 missing; see `data/parse_status.csv` |
-| 4 | Metadata index (`data/index.csv`) | Done: 729 rows |
+| 4 | Metadata index (`data/index.csv`) | Done: 829 rows (729 real + 100 synthetic, Phase 8) |
 | 5 | XBRL companyfacts JSON per company | Done: 50/50 companies |
 | 6 | Summary script | Not started |
 | - | Calibration (`data/calibration.json`) | Done: 147 company-years, 12 metrics; see "Calibration profile" |
@@ -20,6 +20,7 @@ a real-data benchmark.
 | - | Financial statements (Phase 5) | Done: balance sheet, income statement, cash flow per company, all reconciling |
 | - | Narrative generation (Phase 6) | Done: 20/20 companies, 100 files; see "Phase 6" |
 | - | Validation gates (Phase 7) | Automatic and model-judged done, 0 failures; human review open |
+| - | Same-layout index (Phase 8) | Done: one `data/index.csv`, `source` column distinguishes real/synthetic |
 | - | QA, retrieval evaluation | Not started |
 
 ### Downloaded data
@@ -341,10 +342,17 @@ a real-data benchmark.
 - A failing filing gets one regeneration. If it still fails, it is dropped and logged. Hasn't come
   up yet: nothing has failed.
 
-### Phase 8: Same layout as the real corpus
+### Phase 8: Same layout as the real corpus — done
 
-- `data/synthetic/{fictional_id}/{fy}/item_*.txt`, with index rows marked `source = synthetic`.
-  The same index and retrieval code then works on both corpora.
+- `src.step03_build_index` now appends `data/synthetic/{fictional_id}/{fy}/item_*.txt` to the same
+  `data/index.csv` it already built from the real corpus, instead of a separate file. A new
+  `source` column (`real` or `synthetic`) is the only schema change; `cik`, `filing_date`, and
+  `accession_number` are blank on synthetic rows since there's no real-world equivalent. Result:
+  829 rows (729 real + 100 synthetic — 20 companies x 5 items). Retrieval code (Phase 9) can
+  select, mix, or compare the two corpora by filtering on `source` rather than needing two
+  indexes or two code paths.
+- Re-run `step03_build_index` after the synthetic corpus changes, not just after the real one —
+  it's not implicitly triggered by `step06`-`step09`.
 
 ### Phase 9: QA and retrieval evaluation
 
@@ -367,7 +375,7 @@ a real-data benchmark.
 ```
 python -m src.step01_download_10k          # done
 python -m src.step02_parse_sections        # done (Phase 1 / step 3)
-python -m src.step03_build_index           # done (Phase 2 / step 4)
+python -m src.step03_build_index           # done (Phase 2 / step 4; real rows only at this point)
 python -m src.step04_fetch_companyfacts    # done (Phase 2 / step 5)
 python -m src.step05_make_calibration      # done (Phase 3)
 python -m src.step06_make_specs            # done (Phase 4)
@@ -375,8 +383,10 @@ python -m src.step06b_add_scenarios        # done (Phase 4.5)
 python -m src.step07_make_financials       # done (Phase 5)
 python -m src.step08_generate_filings  # built, placeholder (Phase 6; see above)
 python -m src.step09_validate_filings  # done: 0 failures, 20 companies (Phase 7)
-python -m src.step10_make_qa           # not built yet (Phase 9)
-python -m src.step11_evaluate_retrievers  # not built yet (Phase 9)
+python -m src.step03_build_index           # re-run: done (Phase 8; now adds the 100 synthetic rows)
+python -m src.step10_build_pdfs        # done (ad hoc; renders each filing to a standalone PDF)
+python -m src.step11_make_qa           # not built yet (Phase 9)
+python -m src.step12_evaluate_retrievers  # not built yet (Phase 9)
 ```
 
 ### Risks
