@@ -38,6 +38,11 @@ class Bm25Retriever:
         order = np.argsort(-scores)
         return [self.chunk_ids[i] for i in order]
 
+    def top_score(self, query: str) -> float:
+        """Return the best (unbounded) BM25 score for `query`, or 0.0 for an empty corpus."""
+        scores = self._bm25.get_scores(tokenize(query))
+        return float(max(scores)) if len(scores) else 0.0
+
 
 class TfidfRetriever:
     """Pure-numpy TF-IDF vectors with cosine similarity; see module docstring."""

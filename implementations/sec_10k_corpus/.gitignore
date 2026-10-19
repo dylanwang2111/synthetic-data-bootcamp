@@ -20,6 +20,7 @@ data/companyfacts/*.json
 !data/validation_report.csv
 !data/qa_pairs.csv
 !data/retrieval_eval.csv
+!data/gap_report.csv
 
 # Your real SEC identity (name and email) lives here, never in config.yaml
 config.local.yaml

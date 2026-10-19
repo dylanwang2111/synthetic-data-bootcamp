@@ -22,6 +22,7 @@ a real-data benchmark.
 | - | Validation gates (Phase 7) | Automatic and model-judged done, 0 failures; human review open |
 | - | Same-layout index (Phase 8) | Done: one `data/index.csv`, `source` column distinguishes real/synthetic |
 | - | QA, retrieval evaluation (Phase 9) | Done: 124 QA pairs, BM25/TF-IDF/hybrid x 3 experiments |
+| - | Synthetic-vs-real gap report (Phase 10) | Done: best retriever agrees (BM25); length/vocab/numbers differ |
 
 ### Downloaded data
 
@@ -439,11 +440,56 @@ a real-data benchmark.
     recall@5 by ~8 points. None of this is Phase 10's synthetic-vs-real comparison (which asks
     whether a *ranking* agrees across corpora, a different question) — that's still open.
 
-### Phase 10: Synthetic-vs-real gap report
+### Phase 10: Synthetic-vs-real gap report — done
 
-- Compare section lengths, vocabulary overlap, number distributions, and BM25 score distributions.
-- Check whether the retriever ranking on synthetic matches the ranking on real. If it does,
-  synthetic data is a valid proxy for the real benchmark. If not, the report says so.
+`src/step13_gap_report.py` writes `data/gap_report.csv`, 12 rows across the four comparisons below.
+Comparisons 2 and 3 scan the *full* real corpus (729 rows, ~10.8M words), not the 6-company
+sample everywhere else in Phase 9/10 — a streaming word/figure count needs no matrix, unlike the
+dense-vector corpus, so there was no reason to bound it. Comparisons 1 and 4 reuse data Phase 8/9
+already produced (`data/index.csv`, `data/retrieval_eval.csv`) rather than recomputing anything.
+
+1. **Section length** (`data/index.csv`'s own `words` column, median per item): synthetic is
+   3.6%-31.2% of real's median length per item (Item 1C, the shortest and most boilerplate section
+   in both corpora, is closest at 31.2%; Item 8, where real filings carry pages of footnotes
+   synthetic never generates, is furthest at 1.6%). Not a new finding — this is the condensation
+   Phase 6 already documented as a deliberate choice, just quantified precisely for the first time
+   here, per-item rather than as one qualitative note.
+2. **Vocabulary overlap** (Jaccard over each corpus's 3,000 most frequent tokens): 0.404 symmetric
+   Jaccard; 67.1% of synthetic's top-3,000 terms also appear in real's top-3,000. The asymmetry
+   makes sense — synthetic's narrative was written from real exemplars as templates, so its
+   (much smaller) vocabulary is largely a subset of real's; real's top terms include large amounts
+   of real-filing-specific and numeric vocabulary (subsidiary names, exhibit cross-references,
+   boilerplate legal phrasing) that condensed synthetic narrative never needed.
+3. **Number distributions** (every dollar/percent figure found by `step09_validate_filings`'s own
+   `extract_figures`, across every file): synthetic states **more** numbers per 1,000 words than
+   real (4.02 vs. 1.48 dollar figures; 3.09 vs. 1.75 percent figures) — expected, since Phase 6's
+   narrative was deliberately written to state and restate the key statement figures the validation
+   gate checks, where real MD&A spends much more prose on qualitative discussion between numbers.
+   Median dollar magnitude differs sharply ($429M real vs. $2,126M synthetic) and median percent
+   value even more so (100.0% real vs. 23.8% synthetic) — read both with a caveat, not as a deep
+   semantic gap: real's figure *count* is dominated by small, incidental numbers across 10.8M words
+   (per-share amounts, headcounts, ownership-table rows), and real's 100.0% median percent in
+   particular looks like an artifact of how common exact "100%" entries are in real
+   percentage-of-total tables (the same reason `step09_validate_filings.UNIVERSAL_PERCENTS`
+   excludes 0%/100%/21% from its own matching), not a sign real filings "run near 100% margins."
+   Synthetic's narrower, curated set of figures (financial-statement totals, margins, tax rates)
+   skews toward company-scale totals and meaningful ratios instead.
+4. **BM25 score distribution and retriever ranking agreement** (reusing Phase 9's `Bm25Retriever`
+   and `data/retrieval_eval.csv`): median top-1 BM25 score is 23.97 (real sample, n=12) vs. 18.57
+   (synthetic, n=112) — not directly comparable in absolute terms, since BM25's IDF term depends on
+   each corpus's own size and term statistics, and the real sample's 6 companies chunk into far more
+   paragraphs than all 20 synthetic companies combined. The more decision-relevant question is
+   retriever **ranking**: by recall@10, `synthetic_only` ranks retrievers `[bm25, tfidf_dense,
+   hybrid_rrf]` and `real_only` ranks them `[bm25, hybrid_rrf, tfidf_dense]` — **the best retriever
+   agrees (BM25 in both)**, but the full three-way order doesn't (TF-IDF and the hybrid swap
+   second/third place).
+
+**Verdict:** synthetic is a reasonable proxy for *which retriever to pick* (the top choice agrees)
+and for exercising the retrieval/evaluation pipeline end to end, but not a proxy for realistic
+document length, numeric density, or absolute retrieval-score magnitude — all three differ by a
+large, now-quantified margin. Anyone using this corpus for retriever benchmarking should treat
+synthetic results as directional for retriever choice, not as an estimate of real-world recall or
+score values.
 
 ### Command sequence (once built)
 
@@ -462,6 +508,7 @@ python -m src.step03_build_index           # re-run: done (Phase 8; now adds the
 python -m src.step10_build_pdfs        # done (ad hoc; renders each filing to a standalone PDF)
 python -m src.step11_make_qa           # done: 124 QA pairs (Phase 9)
 python -m src.step12_evaluate_retrievers  # done: data/retrieval_eval.csv (Phase 9)
+python -m src.step13_gap_report        # done: data/gap_report.csv (Phase 10)
 ```
 
 ### Risks
@@ -516,4 +563,6 @@ python -m src.step12_evaluate_retrievers  # done: data/retrieval_eval.csv (Phase
   automatic gates (`src.step09_validate_filings`, 0 failures) and a model-judged realism pass on a
   6-company sample (see Phase 7). Human review of about 10 filings is the one Phase 7 item still
   open.
-- **M6 — QA and retrieval evaluation done (Phase 9); gap report still open (Phase 10).**
+- **M6 — done:** QA and retrieval evaluation (Phase 9, 124 QA pairs) and the synthetic-vs-real gap
+  report (Phase 10) are both complete. Every planned phase is now done except Phase 7's human
+  review of about 10 filings, which needs an actual person.

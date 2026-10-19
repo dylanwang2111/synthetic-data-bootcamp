@@ -5,16 +5,18 @@ is the real-data side of a synthetic-10-K benchmark: it provides style templates
 set, and XBRL facts.
 
 **Status:** Steps 1-5 (project setup, 10-K download, section parsing, metadata index, XBRL
-companyfacts) and Phases 3-9 (calibration profile, fictional-company specs, a scenario per company,
-financial statements, narrative generation, validation, same-layout index, QA and retrieval
-evaluation) are implemented. 13/20 fictional companies have a scenario (M&A, a product launch, a
-regulatory event, and so on) grounding their narrative in something beyond generic sector
-boilerplate; the other 7 are an explicit ordinary-course baseline. All 20 pass every automatic
-validation gate (`data/synthetic/`, `data/validation_report.csv`), `data/index.csv` indexes both
-corpora (one `source` column, `real` or `synthetic`), and `data/qa_pairs.csv` /
-`data/retrieval_eval.csv` hold 124 QA pairs and BM25/TF-IDF/hybrid retrieval scores across three
-experiments. See `PLAN.md` for detail; the summary script, Phase 7's human review (the one
-validation gate that isn't automatable), and Phase 10's synthetic-vs-real gap report come next.
+companyfacts) and Phases 3-10 (calibration profile, fictional-company specs, a scenario per
+company, financial statements, narrative generation, validation, same-layout index, QA and
+retrieval evaluation, synthetic-vs-real gap report) are all implemented — every planned phase
+except Phase 7's human review, which needs an actual person. 13/20 fictional companies have a
+scenario (M&A, a product launch, a regulatory event, and so on) grounding their narrative in
+something beyond generic sector boilerplate; the other 7 are an explicit ordinary-course baseline.
+All 20 pass every automatic validation gate (`data/synthetic/`, `data/validation_report.csv`),
+`data/index.csv` indexes both corpora (one `source` column, `real` or `synthetic`),
+`data/qa_pairs.csv` / `data/retrieval_eval.csv` hold 124 QA pairs and BM25/TF-IDF/hybrid retrieval
+scores across three experiments, and `data/gap_report.csv` quantifies how synthetic differs from
+real (shorter, more numerically dense, same top retriever but not the same full ranking). See
+`PLAN.md` for detail.
 
 ## Layout
 
@@ -43,6 +45,7 @@ src/
   retrieval.py                BM25, TF-IDF "dense" retriever, reciprocal rank fusion, metrics (Phase 9)
   step11_make_qa.py           data/qa_pairs.csv: synthetic (deterministic) + real (hand-authored) QA (Phase 9)
   step12_evaluate_retrievers.py  data/retrieval_eval.csv: BM25/TF-IDF/hybrid x 3 experiments (Phase 9)
+  step13_gap_report.py        data/gap_report.csv: length, vocab, numbers, retriever ranking (Phase 10)
 data/
   sp500_constituents.csv frozen S&P 500 snapshot src.step00_sample_companies samples from (committed)
   raw/{ticker}/{fy}/     10k.htm, 10k.txt, ex13_*.htm (if any), metadata.json
@@ -59,6 +62,7 @@ data/
   pdf_reports/{fictional_id}_{fy}.pdf  rendered filing, one PDF per company-year (git-ignored, derived)
   qa_pairs.csv            124 QA pairs (112 synthetic, 12 real), one row per question (committed)
   retrieval_eval.csv      recall@5/@10, MRR, nDCG@10 per retriever x experiment (committed)
+  gap_report.csv          12 rows: section length, vocabulary, number density, retriever ranking (committed)
 logs/                    per-script log files
 ```
 
@@ -277,6 +281,22 @@ python -m src.step12_evaluate_retrievers
   beats the TF-IDF retriever on the real sample's much longer documents; the two are comparable on
   synthetic).
 
+## Quantify the synthetic-vs-real gap (Phase 10)
+
+```bash
+python -m src.step13_gap_report
+```
+
+- Writes `data/gap_report.csv` (committed): section length, vocabulary overlap, number-figure
+  density, BM25 score distribution, and whether the best-performing retriever agrees between the
+  `synthetic_only` and `real_only` experiments in `data/retrieval_eval.csv`. Scans the *full* real
+  corpus for the length/vocabulary/number comparisons (not just the 6-company sample used
+  elsewhere) since none of those need the dense-vector corpus's matrix.
+- Short version (see `PLAN.md` Phase 10 for the full table and caveats): synthetic sections run
+  3.6%-31.2% of real's median length per item; synthetic narrative states 2-3x more numbers per
+  1,000 words than real's more qualitative MD&A prose; the best retriever (BM25) agrees between
+  real and synthetic, but the full three-way retriever ranking doesn't.
+
 ## Render fictional filings as PDFs (optional)
 
 ```bash
@@ -303,7 +323,8 @@ python -m src.step10_build_pdfs
   45-75 MB per filing, mostly images and XBRL data files.
 - Git tracks `metadata.json` files, `data/download_status.csv`, `data/parse_status.csv`,
   `data/companyfacts_status.csv`, `data/calibration.json`, `data/synthetic/`,
-  `data/validation_report.csv`, `data/qa_pairs.csv`, and `data/retrieval_eval.csv`. The filing and
+  `data/validation_report.csv`, `data/qa_pairs.csv`, `data/retrieval_eval.csv`, and
+  `data/gap_report.csv`. The filing and
   section text (`10k.htm`, `10k.txt`, `ex13_*`, `data/parsed/`), `data/companyfacts/*.json`,
   `data/index.csv`, `data/pdf_reports/`, and `logs/` are git-ignored, and are all reproducible by
   re-running the matching script.
