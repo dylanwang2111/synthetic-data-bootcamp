@@ -16,6 +16,7 @@ a real-data benchmark.
 | 6 | Summary script | Not started |
 | - | Calibration (`data/calibration.json`) | Done: 147 company-years, 12 metrics; see "Calibration profile" |
 | - | Company specs (Phase 4) | Done: 20 fictional companies; see `data/synthetic/` |
+| - | Scenario retrofit (Phase 4.5) | Done: 13/20 companies have a scenario, 7/20 baseline |
 | - | Financial statements (Phase 5) | Done: balance sheet, income statement, cash flow per company, all reconciling |
 | - | Narrative generation (Phase 6) | Done: 20/20 companies, 100 files; see "Phase 6" |
 | - | Validation gates (Phase 7) | Automatic and model-judged done, 0 failures; human review open |
@@ -130,6 +131,78 @@ a real-data benchmark.
   and size aren't in the spec; PLAN.md's original Phase 4 wording didn't call for them beyond what
   Item 1C needs, and Phase 6's prompts can likely derive them from sector + financials + a real
   exemplar. Revisit if Phase 6's narrative pilot needs more structure than that.
+
+### Phase 4.5: Scenario retrofit — done, all 20 companies
+
+- Raised after Phase 6/7 were both already complete: spec.json only held size/sector/margin facts
+  plus one cybersecurity flag, so the narrative had nothing distinguishing to ground beyond generic
+  sector-template boilerplate — which is also the root cause of Phase 7's "uniform prose" finding
+  (the same Liquidity paragraph and commitments sentence verbatim across all 20 companies). It also
+  meant there was no structured ground truth for *qualitative* claims (an acquisition, a product
+  launch, a regulatory event) the way there already was for numbers, which matters for Phase 9: a
+  synthetic company's QA pairs are only as good as what's actually grounded in its spec.
+- `python -m src.step06b_add_scenarios`; adds a `scenario` field (`type`, `summary`, `facts`) to
+  each `spec.json`. Scenario types, hand-assigned per company based on fit with its existing
+  profile (see the script's `SCENARIOS` dict for the full rationale and exact source of every
+  figure):
+  - **Mergers & acquisitions** — EASS, FTC, PRG. Each "acquired" a fictional target company this
+    fiscal year; the purchase price is the exact pre-existing `other_investing_activities` dollar
+    figure from that company's own `financials.json` (EASS $249.7M, FTC $2,211.2M, PRG $2,943.0M —
+    PRG's generic "acquisitions of businesses" phrasing already matched this almost exactly). Item 7's
+    Liquidity paragraph was reworded in place to attribute the existing cash outflow to the named
+    acquisition instead of a generic cause; Item 8 gained one new numbered note per company.
+  - **Product launch** — GOG ("SentinelFlow," an anomaly-detection module), grounding the existing
+    R&D-heavy operating loss in a specific, named cause instead of a generic one.
+  - **Competitive displacement** — HZP (a customer migrated workloads to a competitor).
+  - **Margin crisis** — BIDZ, whose 0.4% net margin was already the thinnest of the 20; reframed
+    explicitly as historically compressed and unsustainable without correction, not just reported
+    neutrally.
+  - **Capital structure** — NDE and TVZ (same AutoZone-style template, ~2% equity/assets each):
+    framed, matching how AutoZone itself frames it in real filings, as a deliberate debt-funded
+    share-repurchase strategy reflecting management confidence, explicitly **not** distress — worded
+    independently for each company despite sharing a template and a scenario type.
+  - **Cash burn** — WJE (existing operating/net loss reframed as deliberate pre-profitability
+    investment, consistent with its growth stage).
+  - **Regulatory rate case** — BAI (an unfavorable rate case outcome limited cost recovery).
+  - **Weather event** — VQWP (storm restoration layered onto, not replacing, the existing capital
+    program — explicitly not claimed as the entire investing outflow, since that would be
+    financially implausible for a single utility in one year).
+  - **Regulatory pricing pressure** — KMW (named pharmacy-benefit-management and drug-pricing
+    measures as the driver of its already-thin margin and high effective tax rate).
+  - **Regulatory consent order** — GKRH (a consent order with a federal banking regulator, tied to
+    its existing "other operating expenses" figure).
+  - **Baseline** — CRJ, FAI, JFG, PKPM, SKR, TOUN, XTE (7/20): explicitly "ordinary course of
+    business, no material scenario event." Real 10-Ks are mostly like this, so a benchmark where
+    every company has a dramatic event would itself be unrealistic.
+- **Deliberately out of scope:** true bankruptcy / going-concern distress. None of the 20 companies
+  has a distressed balance sheet, and forcing one would mean actually lowering a company's equity or
+  raising its leverage — real financial-statement changes that risk breaking Phase 5's already-
+  validated reconciliation, not just a narrative reframe. "Elevated financial risk" was folded into
+  BIDZ's margin crisis and NDE/TVZ's capital structure instead, both grounded in figures that were
+  already there.
+- **financials.json is untouched for all 20 companies** (verified: `git diff --stat` on every
+  `financials.json` shows no changes) — every scenario fact is copied from a number already
+  computed in Phase 5, so Phase 7's numeric-consistency gate needed no changes to keep passing.
+- Narrative was retrofitted into the 13 non-baseline companies' `item_1.txt`/`item_1a.txt`/
+  `item_7.txt`/`item_8.txt` (not all 4 files for every company — several were left untouched where
+  the existing content already covered the scenario well enough that forcing an edit would have
+  been redundant), via 4 parallel sub-agents grouped by scenario similarity (M&A trio; tech-sector
+  trio; regulated-industry quartet; balance-sheet-story trio), the same fork-based process Phase 6
+  used. Every edit was a pure insertion or an in-place reattribution of an *existing* number's
+  stated cause — no dollar figure or percentage was changed anywhere.
+- **Verified independently** (not just trusting each sub-agent's self-report, per the same
+  discipline as Phase 6): re-ran `src.step09_validate_filings` after all 4 sub-agents finished —
+  373 checks, 0 failures, across all 20 companies. Spot-checked several of the trickiest edits by
+  hand (PRG and FTC's Liquidity-paragraph reattribution, GKRH's new risk paragraph, NDE/TVZ's
+  capital-structure framing) and confirmed they read naturally and match their intended tone.
+  Checked the 4 new fictional entities (3 acquired companies, 1 product name) against all 503 real
+  S&P 500 names for collisions: none found.
+- **New automatic gate added to Phase 7** (`src/step09_validate_filings.py`'s
+  `scenario_grounding` check): for every non-baseline company, confirms its scenario is actually
+  grounded somewhere in Items 1/1A/7/8, not just recorded in `spec.json`. M&A and product-launch
+  scenarios are checked by exact string match on the acquired company's or product's name; the rest
+  are checked by keyword (e.g. "consent order," "rate case," "repurchase"), since there's no single
+  proper noun to anchor on for something like a regulatory pricing change. All 13 pass.
 
 ### Phase 5: Compute financial statements, don't write them — done
 
@@ -298,6 +371,7 @@ python -m src.step03_build_index           # done (Phase 2 / step 4)
 python -m src.step04_fetch_companyfacts    # done (Phase 2 / step 5)
 python -m src.step05_make_calibration      # done (Phase 3)
 python -m src.step06_make_specs            # done (Phase 4)
+python -m src.step06b_add_scenarios        # done (Phase 4.5)
 python -m src.step07_make_financials       # done (Phase 5)
 python -m src.step08_generate_filings  # built, placeholder (Phase 6; see above)
 python -m src.step09_validate_filings  # done: 0 failures, 20 companies (Phase 7)

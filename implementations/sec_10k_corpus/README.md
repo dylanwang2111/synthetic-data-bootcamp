@@ -5,11 +5,13 @@ is the real-data side of a synthetic-10-K benchmark: it provides style templates
 set, and XBRL facts.
 
 **Status:** Steps 1-5 (project setup, 10-K download, section parsing, metadata index, XBRL
-companyfacts) and Phases 3-7 (calibration profile, fictional-company specs, financial statements,
-narrative generation, validation) are implemented. All 20 fictional companies' `item_*.txt` files
-are written and pass every automatic validation gate (`data/synthetic/`, `data/validation_report.csv`).
-See `PLAN.md` for detail; the summary script and Phase 7's human review (the one validation gate
-that isn't automatable) come next.
+companyfacts) and Phases 3-7 (calibration profile, fictional-company specs, a scenario per company,
+financial statements, narrative generation, validation) are implemented. 13/20 fictional companies
+have a scenario (M&A, a product launch, a regulatory event, and so on) grounding their narrative in
+something beyond generic sector boilerplate; the other 7 are an explicit ordinary-course baseline.
+All 20 pass every automatic validation gate (`data/synthetic/`, `data/validation_report.csv`). See
+`PLAN.md` for detail; the summary script and Phase 7's human review (the one validation gate that
+isn't automatable) come next.
 
 ## Layout
 
@@ -29,6 +31,7 @@ src/
   step04_fetch_companyfacts.py  download XBRL companyfacts per company
   step05_make_calibration.py  data/calibration.json from companyfacts (Phase 3)
   step06_make_specs.py        fictional-company specs from calibration.json (Phase 4)
+  step06b_add_scenarios.py    adds a scenario (M&A, product launch, etc.) to each spec (Phase 4.5)
   step07_make_financials.py   balance sheet, income statement, cash flow (Phase 5)
   step08_generate_filings.py  Claude API narrative generation (Phase 6, built but not run)
   step09_validate_filings.py  automatic validation gates: numeric, leaks, headings (Phase 7)
@@ -156,6 +159,23 @@ python -m src.step06_make_specs
   just the 50 downloaded, and against every other fictional company already generated.
 - Deterministic: re-running regenerates the same 20 specs (fixed seed in `src/step06_make_specs.py`).
 
+## Add a scenario to each fictional company spec
+
+```bash
+python -m src.step06b_add_scenarios
+```
+
+- Adds a `scenario` field to each `spec.json` (M&A, a product launch, a regulatory event, a
+  margin crisis, and so on, or `baseline` for ordinary-course companies) with structured facts the
+  narrative must ground its claims in. See `PLAN.md`'s Phase 4.5 for why: without this, the
+  narrative had nothing distinguishing to say beyond generic sector-template boilerplate, and there
+  was no structured ground truth for qualitative claims the way there is for numbers.
+- Every dollar figure a scenario cites is copied from that company's own, already-reconciled
+  `financials.json` (see the script's `SCENARIOS` dict for exactly which field each one came from),
+  so this never touches `financials.json` and Phase 7's numeric gate is unaffected.
+- Scenario assignments are hardcoded per company (editorial content, like Phase 6's narrative),
+  not randomly generated.
+
 ## Build fictional company financial statements
 
 ```bash
@@ -204,9 +224,10 @@ python -m src.step09_validate_filings
 - Checks every dollar figure and percentage quoted in Item 7 and Item 8 against `financials.json`
   (a leaf value, a handful of named combinations such as "total debt," or a standard ratio like net
   margin), that no real template company's name or ticker appears, that Item 8 has all three
-  statement headings, and that every item file is substantive. Section length against the real
-  corpus's distribution is reported but not gated, since Phase 6 condensed every section by a
-  deliberate choice (see `PLAN.md` Phase 6).
+  statement headings, that every item file is substantive, and that every non-baseline company's
+  `spec.json` scenario (Phase 4.5) is actually grounded somewhere in its narrative. Section length
+  against the real corpus's distribution is reported but not gated, since Phase 6 condensed every
+  section by a deliberate choice (see `PLAN.md` Phase 6).
 - Covers Phase 7's two automatic/model-judged gates; human review of about 10 filings is the one
   gate this script can't do. See `PLAN.md` Phase 7.
 
