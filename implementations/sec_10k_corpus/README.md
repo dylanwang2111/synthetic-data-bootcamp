@@ -5,14 +5,16 @@ is the real-data side of a synthetic-10-K benchmark: it provides style templates
 set, and XBRL facts.
 
 **Status:** Steps 1-5 (project setup, 10-K download, section parsing, metadata index, XBRL
-companyfacts) and Phases 3-8 (calibration profile, fictional-company specs, a scenario per company,
-financial statements, narrative generation, validation, same-layout index) are implemented. 13/20
-fictional companies have a scenario (M&A, a product launch, a regulatory event, and so on)
-grounding their narrative in something beyond generic sector boilerplate; the other 7 are an
-explicit ordinary-course baseline. All 20 pass every automatic validation gate (`data/synthetic/`,
-`data/validation_report.csv`), and `data/index.csv` now indexes both corpora (one `source` column,
-`real` or `synthetic`). See `PLAN.md` for detail; the summary script, Phase 7's human review (the
-one validation gate that isn't automatable), and Phase 9's QA/retrieval evaluation come next.
+companyfacts) and Phases 3-9 (calibration profile, fictional-company specs, a scenario per company,
+financial statements, narrative generation, validation, same-layout index, QA and retrieval
+evaluation) are implemented. 13/20 fictional companies have a scenario (M&A, a product launch, a
+regulatory event, and so on) grounding their narrative in something beyond generic sector
+boilerplate; the other 7 are an explicit ordinary-course baseline. All 20 pass every automatic
+validation gate (`data/synthetic/`, `data/validation_report.csv`), `data/index.csv` indexes both
+corpora (one `source` column, `real` or `synthetic`), and `data/qa_pairs.csv` /
+`data/retrieval_eval.csv` hold 124 QA pairs and BM25/TF-IDF/hybrid retrieval scores across three
+experiments. See `PLAN.md` for detail; the summary script, Phase 7's human review (the one
+validation gate that isn't automatable), and Phase 10's synthetic-vs-real gap report come next.
 
 ## Layout
 
@@ -37,6 +39,10 @@ src/
   step08_generate_filings.py  Claude API narrative generation (Phase 6, built but not run)
   step09_validate_filings.py  automatic validation gates: numeric, leaks, headings (Phase 7)
   step10_build_pdfs.py        renders each filing (real-style cover + Items 1/1A/1C/7/8) to a PDF
+  chunks.py                   shared paragraph-level chunking of index.csv's item files (Phase 9)
+  retrieval.py                BM25, TF-IDF "dense" retriever, reciprocal rank fusion, metrics (Phase 9)
+  step11_make_qa.py           data/qa_pairs.csv: synthetic (deterministic) + real (hand-authored) QA (Phase 9)
+  step12_evaluate_retrievers.py  data/retrieval_eval.csv: BM25/TF-IDF/hybrid x 3 experiments (Phase 9)
 data/
   sp500_constituents.csv frozen S&P 500 snapshot src.step00_sample_companies samples from (committed)
   raw/{ticker}/{fy}/     10k.htm, 10k.txt, ex13_*.htm (if any), metadata.json
@@ -51,6 +57,8 @@ data/
   synthetic/{fictional_id}/{fy}/financials.json  its 3 financial statements (committed)
   validation_report.csv  one row per fictional company x check from the last validation run
   pdf_reports/{fictional_id}_{fy}.pdf  rendered filing, one PDF per company-year (git-ignored, derived)
+  qa_pairs.csv            124 QA pairs (112 synthetic, 12 real), one row per question (committed)
+  retrieval_eval.csv      recall@5/@10, MRR, nDCG@10 per retriever x experiment (committed)
 logs/                    per-script log files
 ```
 
@@ -249,6 +257,26 @@ python -m src.step03_build_index
   real, 100 synthetic — 20 companies x 5 items). Retrieval code (Phase 9) filters on `source`
   rather than needing a second index. See `PLAN.md` Phase 8.
 
+## Build QA pairs and evaluate retrieval (Phase 9)
+
+```bash
+python -m src.step11_make_qa
+python -m src.step12_evaluate_retrievers
+```
+
+- `step11_make_qa.py` writes `data/qa_pairs.csv` (committed): 112 synthetic questions, generated
+  deterministically from each company's own `financials.json`/scenario facts with no model call,
+  and 12 real questions hand-authored from a 6-company sample (AEP, BEN, USB, CVS, NOC, CRWD — the
+  same sample Phase 7's model-judged review used). Every answer is verified as a verbatim substring
+  of its gold passage before being written; the script hard-fails if one isn't found.
+- `step12_evaluate_retrievers.py` writes `data/retrieval_eval.csv` (committed): recall@5, recall@10,
+  MRR, and nDCG@10 for BM25, a TF-IDF "dense" retriever (no neural embedding model — see `PLAN.md`
+  Phase 9 for why), and their reciprocal-rank-fusion hybrid, across three experiments
+  (`synthetic_only`, `real_only`, `mixed`).
+- See `PLAN.md` Phase 9 for the full results table and what they mean (short version: BM25 clearly
+  beats the TF-IDF retriever on the real sample's much longer documents; the two are comparable on
+  synthetic).
+
 ## Render fictional filings as PDFs (optional)
 
 ```bash
@@ -274,8 +302,8 @@ python -m src.step10_build_pdfs
 - The full SEC submission (`.txt` with all exhibits and images) is no longer saved. It was
   45-75 MB per filing, mostly images and XBRL data files.
 - Git tracks `metadata.json` files, `data/download_status.csv`, `data/parse_status.csv`,
-  `data/companyfacts_status.csv`, `data/calibration.json`, `data/synthetic/`, and
-  `data/validation_report.csv`. The filing and
+  `data/companyfacts_status.csv`, `data/calibration.json`, `data/synthetic/`,
+  `data/validation_report.csv`, `data/qa_pairs.csv`, and `data/retrieval_eval.csv`. The filing and
   section text (`10k.htm`, `10k.txt`, `ex13_*`, `data/parsed/`), `data/companyfacts/*.json`,
   `data/index.csv`, `data/pdf_reports/`, and `logs/` are git-ignored, and are all reproducible by
   re-running the matching script.

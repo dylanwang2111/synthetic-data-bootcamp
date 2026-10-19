@@ -21,7 +21,7 @@ a real-data benchmark.
 | - | Narrative generation (Phase 6) | Done: 20/20 companies, 100 files; see "Phase 6" |
 | - | Validation gates (Phase 7) | Automatic and model-judged done, 0 failures; human review open |
 | - | Same-layout index (Phase 8) | Done: one `data/index.csv`, `source` column distinguishes real/synthetic |
-| - | QA, retrieval evaluation | Not started |
+| - | QA, retrieval evaluation (Phase 9) | Done: 124 QA pairs, BM25/TF-IDF/hybrid x 3 experiments |
 
 ### Downloaded data
 
@@ -354,15 +354,90 @@ a real-data benchmark.
 - Re-run `step03_build_index` after the synthetic corpus changes, not just after the real one —
   it's not implicitly triggered by `step06`-`step09`.
 
-### Phase 9: QA and retrieval evaluation
+### Phase 9: QA and retrieval evaluation — done
 
-- Synthetic filings: the spec holds the true values, so QA pairs can have exact answers and gold
-  passage locations.
-- Real filings: generate questions with a model, then check that each answer span appears in the
-  text.
-- Retrievers: BM25, dense embeddings, and hybrid (reciprocal rank fusion).
-- Metrics: recall@k, MRR, nDCG@10.
-- Experiments: synthetic only, real only, and mixed.
+- **Chunking (`src/chunks.py`), shared by QA generation and retrieval.** A chunk is one
+  blank-line-separated block of an item file — the same unit `step10_build_pdfs.tableize()`
+  operates on, so a financial-statement table (heading + rows, no blank lines between them) falls
+  out as one chunk rather than being split mid-table. `load_chunks()` filters at the index-row
+  level (`sources`/`tickers`) before reading any file, not after — the real corpus alone is ~730
+  rows including items over 100,000 words, so filtering after reading cost minutes the first time
+  this was built the naive way.
+- **QA generation (`src/step11_make_qa.py`) — `data/qa_pairs.csv`, 124 rows (112 synthetic, 12
+  real).**
+  - *Synthetic, fully deterministic, no model call.* Every answer is a value already in that
+    company's `financials.json` or `spec.json` scenario (Phase 4.5). The gold chunk and exact
+    answer span are found by scanning the company's own chunks with `step09_validate_filings`'s
+    own figure-extraction and tolerance-matching logic (`extract_figures`, `closest_match`) — so a
+    financial-fact answer is guaranteed to be a verbatim substring of its gold chunk by
+    construction, not by a separate check. Four question types: revenue, net income, total
+    assets, net margin (+ operating margin where `operating_income` exists — 16/20 companies);
+    plus, for the 13 non-baseline companies, a scenario question: the acquired company's name and
+    purchase price (3 M&A companies), the launched product's name (1 company), or — for the 9
+    keyword-grounded scenario types — whichever `SCENARIO_KEYWORDS` term is actually found in the
+    narrative, word-expanded (`migrat` → "migrated") so the short answer reads as a real word. Hit
+    rate: 112/112 possible questions found a grounded answer; 0 silent failures.
+  - *Real, hand-authored, not model-generated.* "Generate questions with a model" above originally
+    meant calling the Claude API; there's no `ANTHROPIC_API_KEY` configured (same gap as Phase 6 —
+    `step08_generate_filings.py` is a placeholder for that reason), and reading whole real filings
+    to write questions would mean ingesting 100,000+ words for the larger ones. Instead: grep-based
+    short excerpts (a paragraph or two, not the whole item) from the same 6-company template sample
+    Phase 7's model-judged review already used (AEP/FY2025, BEN/FY2024, USB/FY2025, CVS/FY2024,
+    NOC/FY2025, CRWD/FY2025), 2 hand-written questions each. Every answer is checked against the
+    actual chunked text at generation time — the script hard-fails (`SystemExit`) if one isn't
+    found verbatim — which is what "check that each answer span appears in the text" means here.
+  - *Known simplification:* each question records exactly one `gold_chunk_id`, even if the same
+    figure happens to be restated in a second chunk (a prose sentence and a table row, say).
+    Retrieval of that second, unrecorded chunk would be scored as a miss. Not corrected for; the
+    effect is to slightly understate recall, not overstate it.
+- **Retrieval (`src/retrieval.py`) and evaluation (`src/step12_evaluate_retrievers.py`) —
+  `data/retrieval_eval.csv`.**
+  - **BM25** via `rank-bm25`. **"Dense"**: TF-IDF vectors (log-scaled term frequency x log IDF,
+    L2-normalized, cosine similarity via plain numpy), capped at an 8,000-term vocabulary. Not a
+    neural embedding — `sentence-transformers` (which pulls in `torch`) was tried and timed out
+    after 3 minutes in this sandboxed environment with no prior download cache. TF-IDF is a real,
+    if dated, vector-space retriever and needed no new heavy dependency; documented here as a
+    deliberate substitution, not a silent one. **Hybrid**: reciprocal rank fusion of the two
+    (`k=60`).
+  - **Calibration note:** an early version picked the TF-IDF vocabulary via
+    `Counter.most_common()`, which breaks count ties by first-insertion order into the counter —
+    and that order depended on `set(tokens)`'s hash-randomized iteration order, so two runs over
+    the *identical* corpus produced slightly different vocabularies (terms right at the 8,000-term
+    cutoff swapped) and therefore slightly different recall/MRR numbers each run. A reproducible
+    evaluation can't have that. Fixed by sorting candidates by `(-count, term)` explicitly instead
+    of relying on `most_common()`'s tie-break; verified by running the full evaluation twice and
+    diffing `retrieval_eval.csv` byte-for-byte (identical).
+  - **Metrics:** recall@5, recall@10, MRR, nDCG@10 (binary relevance, one gold chunk per question).
+  - **Experiments.** `synthetic_only` (112 Qs against the 20 synthetic companies' chunks),
+    `real_only` (12 Qs against the same 6 real sample companies' chunks — not all 50 real
+    companies/150 filings: a brute-force TF-IDF matrix over the full real corpus would need tens
+    of thousands of paragraphs and a correspondingly large dense matrix, with no
+    approximate-nearest-neighbor library installed to make that cheap), `mixed` (all 124 Qs against
+    the union of both).
+  - **Result** (`data/retrieval_eval.csv`):
+
+    | experiment | retriever | n | recall@5 | recall@10 | MRR | nDCG@10 |
+    |---|---|---|---|---|---|---|
+    | synthetic_only | bm25 | 112 | 0.50 | 0.56 | 0.44 | 0.46 |
+    | synthetic_only | tfidf_dense | 112 | 0.50 | 0.56 | 0.44 | 0.46 |
+    | synthetic_only | hybrid_rrf | 112 | 0.49 | 0.56 | 0.44 | 0.46 |
+    | real_only | bm25 | 12 | 0.50 | 0.58 | 0.29 | 0.36 |
+    | real_only | tfidf_dense | 12 | 0.08 | 0.17 | 0.06 | 0.08 |
+    | real_only | hybrid_rrf | 12 | 0.17 | 0.33 | 0.20 | 0.22 |
+    | mixed | bm25 | 124 | 0.49 | 0.51 | 0.41 | 0.43 |
+    | mixed | tfidf_dense | 124 | 0.36 | 0.37 | 0.34 | 0.34 |
+    | mixed | hybrid_rrf | 124 | 0.38 | 0.41 | 0.36 | 0.36 |
+
+    BM25 clearly beats TF-IDF on the real sample (0.50 vs 0.08 recall@5) but the two are about even
+    on synthetic. The real companies' items run to hundreds or thousands of paragraphs each (USB's
+    item 7 alone chunks into ~1,070), against tens per synthetic company; BM25's length
+    normalization and term-frequency saturation evidently holds up much better than a fixed
+    8,000-term TF-IDF vector space does as the candidate pool grows. Hybrid RRF sits *below*
+    BM25 alone on `real_only` and `mixed` — equal-weight fusion with a much weaker second ranking
+    pulls the combined result down, not up, when the two retrievers aren't close in quality. Take
+    the `real_only` numbers directionally, not precisely: n=12 means one question's outcome moves
+    recall@5 by ~8 points. None of this is Phase 10's synthetic-vs-real comparison (which asks
+    whether a *ranking* agrees across corpora, a different question) — that's still open.
 
 ### Phase 10: Synthetic-vs-real gap report
 
@@ -385,8 +460,8 @@ python -m src.step08_generate_filings  # built, placeholder (Phase 6; see above)
 python -m src.step09_validate_filings  # done: 0 failures, 20 companies (Phase 7)
 python -m src.step03_build_index           # re-run: done (Phase 8; now adds the 100 synthetic rows)
 python -m src.step10_build_pdfs        # done (ad hoc; renders each filing to a standalone PDF)
-python -m src.step11_make_qa           # not built yet (Phase 9)
-python -m src.step12_evaluate_retrievers  # not built yet (Phase 9)
+python -m src.step11_make_qa           # done: 124 QA pairs (Phase 9)
+python -m src.step12_evaluate_retrievers  # done: data/retrieval_eval.csv (Phase 9)
 ```
 
 ### Risks
@@ -412,7 +487,9 @@ python -m src.step12_evaluate_retrievers  # not built yet (Phase 9)
    companies x sections.
 4. **Calibration scope — resolved:** generic calibration, generic fictional companies (not
    fictional banks). See Phase 3 and "Calibration profile" above.
-5. **Embedding model:** which model for the dense retriever?
+5. **Embedding model — resolved:** TF-IDF + cosine similarity (plain numpy), not a neural
+   embedding — installing `sentence-transformers` (pulls in `torch`) timed out after 3 minutes in
+   this sandboxed environment. See Phase 9.
 6. **Sharing the raw data — resolved:** published as a public GitHub Release asset
    (`data-v1`, `sec10k_raw_fy2023-2025.tar.gz` + a SHA-256 manifest).
 7. **Repository visibility — resolved:** the GitHub repo is public; confirmed intended.
@@ -431,12 +508,12 @@ python -m src.step12_evaluate_retrievers  # not built yet (Phase 9)
 
 - **M1 — done:** parser runs on all 50 companies x 3 years; exceptions are in
   `data/parse_status.csv` (5 short, 6 missing out of 735 sections, all explained above).
-- **M2 — done:** index (729 rows), companyfacts (50/50 companies), and `calibration.json`
-  (147 company-years, 12 metrics).
+- **M2 — done:** index (729 real rows at the time; 829 after Phase 8 added the synthetic ones),
+  companyfacts (50/50 companies), and `calibration.json` (147 company-years, 12 metrics).
 - **M3 — done:** 20 fictional company specs (Phase 4) and their full balance sheet, income
   statement, and cash-flow tables (Phase 5) are built, with every subtotal and identity checked.
 - **M4/M5 — done:** all 20 fictional companies' narrative written and validated against Phase 7's
   automatic gates (`src.step09_validate_filings`, 0 failures) and a model-judged realism pass on a
   6-company sample (see Phase 7). Human review of about 10 filings is the one Phase 7 item still
   open.
-- **M6:** QA, retrieval evaluation, and gap report.
+- **M6 — QA and retrieval evaluation done (Phase 9); gap report still open (Phase 10).**
