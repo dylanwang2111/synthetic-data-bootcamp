@@ -192,37 +192,35 @@
       whether each file is internally sound.</p>
     </div>
 
-    <div class="grid3">
-      <div class="card">
-        <h3>Structural checks by type</h3>
-        <p class="note">PASS / FAIL / INFO counts across every company. <code>length_vs_real</code> is
-        reported for context, not gated — see the distributional charts below. Real-company-leak
-        checks are reported under Privacy, not here.</p>
-        <div class="table-wrap" style="max-height: 20rem;">
-          <table class="data" id="tbl-by-check">
-            <thead><tr>
-              <th data-col="check"><button>Check</button></th>
-              <th data-col="total" data-num="1"><button>Total</button></th>
-              <th data-col="pass" data-num="1"><button>Pass</button></th>
-              <th data-col="fail" data-num="1"><button>Fail</button></th>
-              <th data-col="info" data-num="1"><button>Info</button></th>
-            </tr></thead>
-            <tbody></tbody>
-          </table>
-        </div>
-      </div>
+    <div class="card">
+      <h3>Structural checks: pass rate by type</h3>
+      <p class="note">Each bar is one check type, scaled to its own total so checks that apply to
+      different numbers of companies are still comparable. <code>length_vs_real</code> is
+      informational, not gated — see the distributional charts below. Real-company-leak checks are
+      reported under Privacy, not here.</p>
+      <div class="legend" id="check-status-legend"></div>
+      <div class="chart-wrap" id="chart-check-status" style="min-height: 13rem;"></div>
+    </div>
 
-      <div class="card span-2">
+    <div class="grid2">
+      <div class="card">
+        <h3>Scenario diversity</h3>
+        <p class="note">How many companies get each kind of scenario. 7 of 20 are a deliberate
+        baseline (ordinary course, no scenario) — see <code>PLAN.md</code> Phase 4.5 for why a
+        control group matters as much as the scenario coverage does.</p>
+        <div class="chart-wrap chart-box" id="chart-scenario-diversity"></div>
+      </div>
+      <div class="card">
         <h3>Per-company scenario grounding</h3>
-        <p class="note">What each company's <code>spec.json</code> scenario was grounded on, and whether its structural checks all passed. A company with no scenario shows "baseline (no scenario)".</p>
-        <div class="table-wrap" style="max-height: 20rem;">
+        <p class="note">Which scenario each company was assigned, and whether its structural checks
+        all passed. Full match detail is in the all-checks table below.</p>
+        <div class="table-wrap" style="max-height: 22rem;">
           <table class="data" id="tbl-by-company">
             <thead><tr>
               <th data-col="fictional_id"><button>Company</button></th>
               <th data-col="fiscal_year"><button>FY</button></th>
-              <th data-col="total" data-num="1"><button>Checks</button></th>
-              <th data-col="fail" data-num="1"><button>Fail</button></th>
-              <th data-col="scenario"><button>Scenario grounding</button></th>
+              <th data-col="scenario_label"><button>Scenario</button></th>
+              <th data-col="status_label"><button>Checks</button></th>
             </tr></thead>
             <tbody></tbody>
           </table>
@@ -296,9 +294,15 @@
         <h3>Questions by source</h3>
         <div class="stat-row"><span class="big" id="qa-synthetic">—</span><span class="vs">synthetic</span></div>
         <div class="stat-row"><span class="big" id="qa-real">—</span><span class="vs">real (6-company sample)</span></div>
-        <p class="note">Synthetic: revenue, net income, total assets, net margin, operating margin, plus one scenario question per non-baseline company. Real: AEP, BEN, USB, CVS, NOC, CRWD.</p>
+        <p class="note">Real: AEP, BEN, USB, CVS, NOC, CRWD.</p>
       </div>
-      <div class="card span-2">
+      <div class="card">
+        <h3>Questions by style</h3>
+        <div class="stat-row"><span class="big" id="qa-factual">—</span><span class="vs">factual — a figure or named entity</span></div>
+        <div class="stat-row"><span class="big" id="qa-analytical">—</span><span class="vs">analytical — why, or what it implies</span></div>
+        <p class="note">Analytical questions (e.g. "why did margins compress?", "what integration risk does this acquisition carry?") still have one short exact answer, but finding it means reading a passage that connects a cause to an effect, not matching a labeled figure.</p>
+      </div>
+      <div class="card">
         <h3>Does retriever choice transfer from synthetic to real?</h3>
         <div class="verdict">
           <p>Best retriever by recall@10: <b id="best-real">—</b> (real) and <b id="best-synth">—</b> (synthetic) &mdash; <span id="best-note">—</span>.</p>
@@ -335,15 +339,16 @@
 
     <div class="card">
       <h3>All QA pairs</h3>
-      <p class="note">Every question, its exact answer, and the chunk id it's grounded in.</p>
+      <p class="note">Every question, its exact answer, and the chunk id it's grounded in. Search "analytical" or "factual" to filter by style.</p>
       <div class="table-tools">
-        <input type="search" id="search-qa" placeholder="Search e.g. PRG, acquire, margin…" aria-label="Search QA pairs">
+        <input type="search" id="search-qa" placeholder="Search e.g. PRG, analytical, margin…" aria-label="Search QA pairs">
         <span class="count" id="count-qa"></span>
       </div>
       <div class="table-wrap">
         <table class="data" id="tbl-qa">
           <thead><tr>
             <th data-col="source"><button>Source</button></th>
+            <th data-col="style"><button>Style</button></th>
             <th data-col="ticker"><button>Ticker</button></th>
             <th data-col="fiscal_year"><button>FY</button></th>
             <th data-col="item"><button>Item</button></th>
@@ -442,6 +447,31 @@
   const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : NaN; };
 
   const CHECK_ORDER = ['substantive', 'length_vs_real', 'required_headings', 'scenario_grounding', 'numeric_consistency'];
+  const CHECK_LABEL = {
+    substantive: 'Substantive length',
+    length_vs_real: 'Length vs. real (informational)',
+    required_headings: 'Required statement headings',
+    scenario_grounding: 'Scenario grounding',
+    numeric_consistency: 'Numeric consistency',
+  };
+  const SCENARIO_TYPE_LABEL = {
+    mergers_and_acquisitions: 'Mergers & acquisitions',
+    product_launch: 'Product launch',
+    competitive_displacement: 'Competitive displacement',
+    margin_crisis: 'Margin crisis',
+    capital_structure: 'Capital structure',
+    cash_burn: 'Cash burn',
+    regulatory_rate_case: 'Regulatory rate case',
+    weather_event: 'Weather event',
+    regulatory_pricing_pressure: 'Regulatory pricing pressure',
+    regulatory_consent_order: 'Regulatory consent order',
+    baseline: 'Baseline (no scenario)',
+  };
+
+  function parseScenarioType(detail) {
+    const m = /^\[([a-z_]+)\]/.exec(detail || '');
+    return m ? m[1] : 'baseline';
+  }
   const RETRIEVERS = ['bm25', 'semantic', 'hybrid_rrf'];
   const RETRIEVER_LABEL = { bm25: 'BM25', semantic: 'Semantic', hybrid_rrf: 'Hybrid RRF' };
   const RETRIEVER_COLOR = { bm25: 'var(--series-1)', semantic: 'var(--series-2)', hybrid_rrf: 'var(--series-3)' };
@@ -478,14 +508,26 @@
     for (const r of rows) {
       if (r.check === 'real_company_leak') continue;
       if (!byCompany.has(r.fictional_id)) {
-        byCompany.set(r.fictional_id, { fictional_id: r.fictional_id, fiscal_year: r.fiscal_year, total: 0, fail: 0, scenario: 'baseline (no scenario)' });
+        byCompany.set(r.fictional_id, { fictional_id: r.fictional_id, fiscal_year: r.fiscal_year, total: 0, fail: 0, scenario_type: 'baseline' });
       }
       const c = byCompany.get(r.fictional_id);
       c.total += 1;
       if (r.status === 'FAIL') c.fail += 1;
-      if (r.check === 'scenario_grounding') c.scenario = r.detail;
+      if (r.check === 'scenario_grounding') c.scenario_type = parseScenarioType(r.detail);
     }
-    return Array.from(byCompany.values()).sort((a, b) => a.fictional_id.localeCompare(b.fictional_id));
+    return Array.from(byCompany.values()).map((c) => ({
+      ...c,
+      scenario_label: SCENARIO_TYPE_LABEL[c.scenario_type] || c.scenario_type,
+      status_label: c.fail === 0 ? 'all pass' : c.fail + ' failing',
+    })).sort((a, b) => a.fictional_id.localeCompare(b.fictional_id));
+  }
+
+  function computeScenarioDiversity(byCompanyRows) {
+    const counts = new Map();
+    for (const c of byCompanyRows) {
+      counts.set(c.scenario_label, (counts.get(c.scenario_label) || 0) + 1);
+    }
+    return Array.from(counts.entries()).map(([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count);
   }
 
   function computePrivacyByCompany(rows) {
@@ -736,6 +778,114 @@
       .html((s) => `<i style="background:${color[s]}"></i>${s}`);
   }
 
+  // ---------- Fidelity charts: check status + scenario diversity ----------
+  function renderCheckStatusLegend() {
+    const el = document.getElementById('check-status-legend');
+    const items = [['Pass', 'var(--good)'], ['Fail', 'var(--critical)'], ['Informational', 'var(--ink-muted)']];
+    el.replaceChildren(...items.map(([label, color]) => {
+      const span = document.createElement('span');
+      span.className = 'sw';
+      span.innerHTML = '<i style="background:' + color + '"></i>' + label;
+      return span;
+    }));
+  }
+
+  function drawCheckStatusChart(container, rows) {
+    container.replaceChildren();
+    const width = container.clientWidth || 600;
+    const rowH = 34;
+    const margin = { top: 6, right: 56, bottom: 6, left: 180 };
+    const innerW = width - margin.left - margin.right;
+    const innerH = rows.length * rowH;
+    const height = innerH + margin.top + margin.bottom;
+
+    const svg = d3.select(container).append('svg').attr('viewBox', `0 0 ${width} ${height}`);
+    const g = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+
+    const y = d3.scaleBand().domain(rows.map((r) => r.check)).range([0, innerH]).padding(0.35);
+    const x = d3.scaleLinear().domain([0, 1]).range([0, innerW]);
+    const tip = d3.select(container).append('div').attr('class', 'tip');
+
+    g.selectAll('.lbl').data(rows).join('text')
+      .attr('x', -10).attr('y', (d) => y(d.check) + y.bandwidth() / 2)
+      .attr('dy', '.32em').attr('text-anchor', 'end')
+      .attr('fill', 'var(--ink-2)').attr('font-size', 12)
+      .text((d) => CHECK_LABEL[d.check] || d.check);
+
+    const rowG = g.selectAll('.row').data(rows).join('g').attr('transform', (d) => `translate(0,${y(d.check)})`);
+    rowG.each(function (d) {
+      const total = d.total || 1;
+      const segs = [
+        { key: 'pass', value: d.pass, color: 'var(--good)' },
+        { key: 'fail', value: d.fail, color: 'var(--critical)' },
+        { key: 'info', value: d.info, color: 'var(--ink-muted)' },
+      ];
+      let acc = 0;
+      const sel = d3.select(this);
+      sel.append('rect').attr('x', 0).attr('y', 0).attr('width', innerW).attr('height', y.bandwidth())
+        .attr('rx', 3).attr('fill', 'var(--grid)');
+      segs.forEach((s) => {
+        const frac = s.value / total;
+        if (frac > 0) {
+          sel.append('rect')
+            .attr('x', x(acc)).attr('width', Math.max(x(acc + frac) - x(acc), 0))
+            .attr('y', 0).attr('height', y.bandwidth())
+            .attr('rx', 3).attr('fill', s.color)
+            .on('mousemove', (event) => {
+              const [mx, my] = d3.pointer(event, container);
+              tip.style('left', mx + 'px').style('top', my + 'px').style('opacity', 1)
+                .html(`<b>${CHECK_LABEL[d.check] || d.check}</b><br>${s.key}: ${s.value} / ${d.total}`);
+            })
+            .on('mouseleave', () => tip.style('opacity', 0));
+        }
+        acc += frac;
+      });
+    });
+
+    rowG.append('text')
+      .attr('x', innerW + 10).attr('y', y.bandwidth() / 2).attr('dy', '.32em')
+      .attr('fill', 'var(--ink-muted)').attr('font-size', 11)
+      .text((d) => (d.check === 'length_vs_real' ? d.info + ' informational' : d.pass + '/' + d.total));
+  }
+
+  function drawScenarioDiversityChart(container, rows) {
+    container.replaceChildren();
+    const width = container.clientWidth || 420;
+    const rowH = 28;
+    const margin = { top: 6, right: 30, bottom: 6, left: 170 };
+    const innerW = width - margin.left - margin.right;
+    const innerH = rows.length * rowH;
+    const height = innerH + margin.top + margin.bottom;
+
+    const svg = d3.select(container).append('svg').attr('viewBox', `0 0 ${width} ${height}`);
+    const g = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+
+    const y = d3.scaleBand().domain(rows.map((r) => r.label)).range([0, innerH]).padding(0.3);
+    const x = d3.scaleLinear().domain([0, d3.max(rows, (r) => r.count) || 1]).range([0, innerW]);
+    const tip = d3.select(container).append('div').attr('class', 'tip');
+
+    g.selectAll('.lbl').data(rows).join('text')
+      .attr('x', -10).attr('y', (d) => y(d.label) + y.bandwidth() / 2)
+      .attr('dy', '.32em').attr('text-anchor', 'end')
+      .attr('fill', 'var(--ink-2)').attr('font-size', 11)
+      .text((d) => d.label);
+
+    g.selectAll('.bar').data(rows).join('rect')
+      .attr('x', 0).attr('y', (d) => y(d.label))
+      .attr('width', (d) => Math.max(x(d.count), 2)).attr('height', y.bandwidth())
+      .attr('rx', 3).attr('fill', (d) => (d.label.startsWith('Baseline') ? 'var(--ink-muted)' : 'var(--series-2)'))
+      .on('mousemove', (event, d) => {
+        const [mx, my] = d3.pointer(event, container);
+        tip.style('left', mx + 'px').style('top', my + 'px').style('opacity', 1)
+          .html(`<b>${d.label}</b>: ${d.count} compan${d.count === 1 ? 'y' : 'ies'}`);
+      }).on('mouseleave', () => tip.style('opacity', 0));
+
+    g.selectAll('.val').data(rows).join('text')
+      .attr('x', (d) => x(d.count) + 6).attr('y', (d) => y(d.label) + y.bandwidth() / 2)
+      .attr('dy', '.32em').attr('fill', 'var(--ink-2)').attr('font-size', 11)
+      .text((d) => d.count);
+  }
+
   // ---------- Privacy chart: per-company distance from real template, sorted ----------
   function drawPrivacyChart(container, companyStats) {
     container.replaceChildren();
@@ -818,8 +968,12 @@
     const structTotals = computeStructuralTotals(validation);
     document.getElementById('fidelity-struct-rate').textContent = fmtPct1(structTotals.passRate);
 
-    setupTable({ tableId: 'tbl-by-check', columns: ['check', 'total', 'pass', 'fail', 'info'], rows: computeByCheck(validation) });
-    setupTable({ tableId: 'tbl-by-company', columns: ['fictional_id', 'fiscal_year', 'total', 'fail', 'scenario'], rows: computeByCompany(validation) });
+    renderCheckStatusLegend();
+    drawCheckStatusChart(document.getElementById('chart-check-status'), computeByCheck(validation));
+
+    const byCompany = computeByCompany(validation);
+    drawScenarioDiversityChart(document.getElementById('chart-scenario-diversity'), computeScenarioDiversity(byCompany));
+    setupTable({ tableId: 'tbl-by-company', columns: ['fictional_id', 'fiscal_year', 'scenario_label', 'status_label'], rows: byCompany });
     setupTable({
       tableId: 'tbl-validation', searchId: 'search-validation', countId: 'count-validation',
       columns: ['fictional_id', 'fiscal_year', 'check', 'item', 'status', 'detail'],
@@ -853,8 +1007,11 @@
     // ---- Utility ----
     const qaSynthetic = qa.filter((r) => r.source === 'synthetic').length;
     const qaReal = qa.filter((r) => r.source === 'real').length;
+    const qaAnalytical = qa.filter((r) => r.style === 'analytical').length;
     document.getElementById('qa-synthetic').textContent = fmtInt(qaSynthetic);
     document.getElementById('qa-real').textContent = fmtInt(qaReal);
+    document.getElementById('qa-factual').textContent = fmtInt(qa.length - qaAnalytical);
+    document.getElementById('qa-analytical').textContent = fmtInt(qaAnalytical);
     document.getElementById('utility-qa-total').textContent = fmtInt(qa.length);
 
     setupTable({
@@ -868,7 +1025,7 @@
     });
     setupTable({
       tableId: 'tbl-qa', searchId: 'search-qa', countId: 'count-qa',
-      columns: ['source', 'ticker', 'fiscal_year', 'item', 'question', 'answer', 'gold_chunk_id'], rows: qa,
+      columns: ['source', 'style', 'ticker', 'fiscal_year', 'item', 'question', 'answer', 'gold_chunk_id'], rows: qa,
     });
 
     renderLegend();

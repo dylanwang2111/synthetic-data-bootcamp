@@ -61,7 +61,7 @@ data/
   synthetic/{fictional_id}/{fy}/financials.json  its 3 financial statements (committed)
   validation_report.csv  one row per fictional company x check from the last validation run
   pdf_reports/{fictional_id}_{fy}.pdf  rendered filing, one PDF per company-year (git-ignored, derived)
-  qa_pairs.csv            124 QA pairs (112 synthetic, 12 real), one row per question (committed)
+  qa_pairs.csv            130 QA pairs (118 synthetic, 12 real; 115 factual, 15 analytical), one row per question (committed)
   retrieval_eval.csv      recall@5/@10, MRR, nDCG@10 per retriever x experiment (committed)
   gap_report.csv          12 rows: section length, vocabulary, number density, retriever ranking (committed)
   privacy_report.csv      112 rows: each company's financials vs. its real template's actual values (committed)
@@ -271,11 +271,15 @@ python -m src.step11_make_qa
 python -m src.step12_evaluate_retrievers
 ```
 
-- `step11_make_qa.py` writes `data/qa_pairs.csv` (committed): 112 synthetic questions, generated
+- `step11_make_qa.py` writes `data/qa_pairs.csv` (committed): 118 synthetic questions, generated
   deterministically from each company's own `financials.json`/scenario facts with no model call,
   and 12 real questions hand-authored from a 6-company sample (AEP, BEN, USB, CVS, NOC, CRWD — the
   same sample Phase 7's model-judged review used). Every answer is verified as a verbatim substring
-  of its gold passage before being written; the script hard-fails if one isn't found.
+  of its gold passage before being written; the script hard-fails if one isn't found. Every
+  question also carries a `style` — `factual` (115 rows: a figure or named entity) or `analytical`
+  (15 rows: why something happened, or what it implies — still one short exact answer, but finding
+  it means reading a passage that connects a cause to an effect). See `PLAN.md` Phase 9 for the
+  three ways analytical questions are grounded.
 - `step12_evaluate_retrievers.py` writes `data/retrieval_eval.csv` (committed): recall@5, recall@10,
   MRR, and nDCG@10 for BM25, a real semantic embedding retriever (`fastembed` +
   `minishlab/potion-retrieval-32M` — see `PLAN.md` Phase 9 for why that model specifically), and

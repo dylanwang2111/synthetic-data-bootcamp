@@ -352,7 +352,14 @@ def validate_company(spec_path: Path, real_companies: dict[str, str], real_stats
         combined_text = "\n".join(texts.get(item, "") for item in ("1", "1a", "7", "8"))
         status, detail = check_scenario_grounding(spec["scenario"], combined_text)
         if status != "SKIP":
-            add("scenario_grounding", "1/1a/7/8", status, detail)
+            # The type prefix (e.g. "[margin_crisis]") makes the scenario category
+            # machine-readable from this one field, without a separate lookup file --
+            # a dashboard building a "scenario diversity" view needs the type, not just
+            # the free-text match detail, and the type itself isn't a leak (it's the
+            # company's own fictional scenario label, not anything about its real
+            # template).
+            scenario_type = spec["scenario"].get("type", "unknown")
+            add("scenario_grounding", "1/1a/7/8", status, f"[{scenario_type}] {detail}")
 
     expected_dollars, expected_percents = build_expected_figures(financials)
     for item in ("7", "8"):

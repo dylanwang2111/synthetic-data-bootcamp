@@ -21,7 +21,7 @@ a real-data benchmark.
 | - | Narrative generation (Phase 6) | Done: 20/20 companies, 100 files; see "Phase 6" |
 | - | Validation gates (Phase 7) | Automatic and model-judged done, 0 failures; human review open |
 | - | Same-layout index (Phase 8) | Done: one `data/index.csv`, `source` column distinguishes real/synthetic |
-| - | QA, retrieval evaluation (Phase 9) | Done: 124 QA pairs, BM25/semantic/hybrid x 3 experiments |
+| - | QA, retrieval evaluation (Phase 9) | Done: 130 QA pairs (115 factual, 15 analytical), BM25/semantic/hybrid x 3 experiments |
 | - | Synthetic-vs-real gap report (Phase 10) | Done: full retriever ranking agrees; length/vocab/numbers differ |
 | - | Privacy: distance from real template (Phase 11) | Done: no company's financials sit within 5% of its template on every field |
 
@@ -410,20 +410,43 @@ fictional value.
   level (`sources`/`tickers`) before reading any file, not after — the real corpus alone is ~730
   rows including items over 100,000 words, so filtering after reading cost minutes the first time
   this was built the naive way.
-- **QA generation (`src/step11_make_qa.py`) — `data/qa_pairs.csv`, 124 rows (112 synthetic, 12
-  real).**
+- **QA generation (`src/step11_make_qa.py`) — `data/qa_pairs.csv`, 130 rows (118 synthetic, 12
+  real).** Every row has a `style`: `factual` (a single figure or named entity — 115 rows) or
+  `analytical` (why something happened, or what it implies — 15 rows). Analytical questions are
+  grounded exactly the same way as factual ones (a chunk search, verified at generation time,
+  never a paraphrase); the difference is the question requires reading a passage that connects a
+  cause to an effect, not locating a labeled figure.
   - *Synthetic, fully deterministic, no model call.* Every answer is a value already in that
     company's `financials.json` or `spec.json` scenario (Phase 4.5). The gold chunk and exact
     answer span are found by scanning the company's own chunks with `step09_validate_filings`'s
     own figure-extraction and tolerance-matching logic (`extract_figures`, `closest_match`) — so a
     financial-fact answer is guaranteed to be a verbatim substring of its gold chunk by
-    construction, not by a separate check. Four question types: revenue, net income, total
-    assets, net margin (+ operating margin where `operating_income` exists — 16/20 companies);
-    plus, for the 13 non-baseline companies, a scenario question: the acquired company's name and
-    purchase price (3 M&A companies), the launched product's name (1 company), or — for the 9
-    keyword-grounded scenario types — whichever `SCENARIO_KEYWORDS` term is actually found in the
-    narrative, word-expanded (`migrat` → "migrated") so the short answer reads as a real word. Hit
-    rate: 112/112 possible questions found a grounded answer; 0 silent failures.
+    construction, not by a separate check. Four **factual** question types: revenue, net income,
+    total assets, net margin (+ operating margin where `operating_income` exists — 16/20
+    companies); plus, for the 13 non-baseline companies, a factual scenario question (the
+    acquired company's name, the purchase price, or the launched product's name).
+  - **Analytical questions, added after the first pass read as pure factoid lookups** (revenue,
+    margin, "what company did X acquire") with no question requiring synthesis. Three kinds, all
+    grounded by verifying the exact phrase or keyword is actually present at generation time, same
+    rigor as every other question in this file:
+    - *Rephrased scenario questions* (9 keyword-grounded types, e.g. "Why did {company}'s margins
+      compress to historically thin levels in fiscal {fy}?" instead of "What type of rate pressure
+      did {company} cite…"). Same grounding and answer as before, reframed as a cause, not a
+      category label.
+    - *Risk-implication questions*, newly grounded in each company's Item 1A risk factors (not
+      reused from an existing chunk): the 3 M&A companies and the 1 product-launch company each
+      have a risk paragraph reading "We may not realize the anticipated/expected benefits of our
+      acquisition/launch of X…" — verified present in all 4 before use, not assumed from the
+      M&A/product-launch narrative pattern elsewhere.
+    - *Severity-synthesis questions*, for the 2 scenario types (`margin_crisis` — BIDZ,
+      `cash_burn` — WJE) where the narrative happens to state the scenario's driver and its
+      financial-statement outcome in the *same* paragraph — checked per company, not assumed from
+      the scenario type; no other scenario type had this co-location. The answer is the
+      qualitative severity phrase the narrative itself uses ("thinnest margins",
+      "ahead of sustained profitability"), not a bare percentage, so answering requires reading
+      past the figures to the sentence that characterizes them.
+  - Hit rate: every one of these generates deterministically from facts already verified present;
+    0 silent failures.
   - *Real, hand-authored, not model-generated.* "Generate questions with a model" above originally
     meant calling the Claude API; there's no `ANTHROPIC_API_KEY` configured (same gap as Phase 6 —
     `step08_generate_filings.py` is a placeholder for that reason), and reading whole real filings
@@ -469,23 +492,28 @@ fictional value.
     plain `pip install fastembed` resolved huggingface-hub 1.33.0 and broke on import; fixed by
     pinning `huggingface-hub==0.36.2` in `requirements.txt`.
   - **Metrics:** recall@5, recall@10, MRR, nDCG@10 (binary relevance, one gold chunk per question).
-  - **Experiments.** `synthetic_only` (112 Qs against the 20 synthetic companies' chunks),
+  - **Experiments.** `synthetic_only` (118 Qs against the 20 synthetic companies' chunks),
     `real_only` (12 Qs against the same 6 real sample companies' chunks — not all 50 real
     companies/150 filings, which would mean embedding on the order of 500,000 paragraphs), `mixed`
-    (all 124 Qs against the union of both).
+    (all 130 Qs against the union of both).
   - **Result** (`data/retrieval_eval.csv`):
 
     | experiment | retriever | n | recall@5 | recall@10 | MRR | nDCG@10 |
     |---|---|---|---|---|---|---|
-    | synthetic_only | bm25 | 112 | 0.50 | 0.56 | 0.44 | 0.46 |
-    | synthetic_only | semantic | 112 | 0.47 | 0.52 | 0.40 | 0.42 |
-    | synthetic_only | hybrid_rrf | 112 | 0.47 | 0.54 | 0.44 | 0.46 |
+    | synthetic_only | bm25 | 118 | 0.49 | 0.57 | 0.44 | 0.46 |
+    | synthetic_only | semantic | 118 | 0.50 | 0.54 | 0.40 | 0.43 |
+    | synthetic_only | hybrid_rrf | 118 | 0.48 | 0.56 | 0.44 | 0.46 |
     | real_only | bm25 | 12 | 0.50 | 0.58 | 0.29 | 0.36 |
     | real_only | semantic | 12 | 0.33 | 0.33 | 0.21 | 0.23 |
     | real_only | hybrid_rrf | 12 | 0.33 | 0.42 | 0.23 | 0.27 |
-    | mixed | bm25 | 124 | 0.49 | 0.51 | 0.41 | 0.43 |
-    | mixed | semantic | 124 | 0.44 | 0.44 | 0.36 | 0.37 |
-    | mixed | hybrid_rrf | 124 | 0.44 | 0.47 | 0.40 | 0.41 |
+    | mixed | bm25 | 130 | 0.48 | 0.49 | 0.40 | 0.42 |
+    | mixed | semantic | 130 | 0.45 | 0.45 | 0.35 | 0.38 |
+    | mixed | hybrid_rrf | 130 | 0.46 | 0.48 | 0.40 | 0.42 |
+
+    (Adding the 6 analytical questions in the "diversity" revision below shifted these by a point
+    or two — e.g. synthetic_only's recall@5 ordering between bm25 and semantic flips — but not the
+    qualitative story: BM25 still edges out the semantic retriever on `real_only`, and the full
+    ranking agreement in Phase 10 below is unaffected.)
 
     BM25 beats the semantic retriever on all three experiments, but nowhere near as dramatically as
     TF-IDF's collapse on `real_only` (0.50 vs. 0.33 recall@5, not 0.50 vs. 0.08) — a real embedding
@@ -536,8 +564,8 @@ already produced (`data/index.csv`, `data/retrieval_eval.csv`) rather than recom
    Synthetic's narrower, curated set of figures (financial-statement totals, margins, tax rates)
    skews toward company-scale totals and meaningful ratios instead.
 4. **BM25 score distribution and retriever ranking agreement** (reusing Phase 9's `Bm25Retriever`
-   and `data/retrieval_eval.csv`): median top-1 BM25 score is 23.97 (real sample, n=12) vs. 18.57
-   (synthetic, n=112) — not directly comparable in absolute terms, since BM25's IDF term depends on
+   and `data/retrieval_eval.csv`): median top-1 BM25 score is 23.97 (real sample, n=12) vs. 18.64
+   (synthetic, n=118) — not directly comparable in absolute terms, since BM25's IDF term depends on
    each corpus's own size and term statistics, and the real sample's 6 companies chunk into far more
    paragraphs than all 20 synthetic companies combined. The more decision-relevant question is
    retriever **ranking**: by recall@10, both `synthetic_only` and `real_only` rank retrievers the
@@ -568,7 +596,7 @@ python -m src.step08_generate_filings  # built, placeholder (Phase 6; see above)
 python -m src.step09_validate_filings  # done: 0 failures, 20 companies (Phase 7)
 python -m src.step03_build_index           # re-run: done (Phase 8; now adds the 100 synthetic rows)
 python -m src.step10_build_pdfs        # done (ad hoc; renders each filing to a standalone PDF)
-python -m src.step11_make_qa           # done: 124 QA pairs (Phase 9)
+python -m src.step11_make_qa           # done: 130 QA pairs (Phase 9)
 python -m src.step12_evaluate_retrievers  # done: data/retrieval_eval.csv (Phase 9)
 python -m src.step13_gap_report        # done: data/gap_report.csv (Phase 10)
 python -m src.step14_privacy_check     # done: data/privacy_report.csv (Phase 11)
@@ -628,6 +656,6 @@ python -m src.step14_privacy_check     # done: data/privacy_report.csv (Phase 11
   automatic gates (`src.step09_validate_filings`, 0 failures) and a model-judged realism pass on a
   6-company sample (see Phase 7). Human review of about 10 filings is the one Phase 7 item still
   open.
-- **M6 — done:** QA and retrieval evaluation (Phase 9, 124 QA pairs) and the synthetic-vs-real gap
+- **M6 — done:** QA and retrieval evaluation (Phase 9, 130 QA pairs) and the synthetic-vs-real gap
   report (Phase 10) are both complete. Every planned phase is now done except Phase 7's human
   review of about 10 filings, which needs an actual person.

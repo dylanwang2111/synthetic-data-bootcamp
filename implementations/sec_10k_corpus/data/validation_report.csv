@@ -15,7 +15,7 @@ BAI,2025,substantive,8,PASS,465 words
 BAI,2025,length_vs_real,8,INFO,3199 chars vs real median 171195 chars (2%)
 BAI,2025,real_company_leak,8,PASS,none found
 BAI,2025,required_headings,8,PASS,all present
-BAI,2025,scenario_grounding,1/1a/7/8,PASS,"matched: ['rate case', 'rate increase', 'rate proceeding']"
+BAI,2025,scenario_grounding,1/1a/7/8,PASS,"[regulatory_rate_case] matched: ['rate case', 'rate increase', 'rate proceeding']"
 BAI,2025,numeric_consistency,7,PASS,32/32 figures traced
 BAI,2025,numeric_consistency,8,PASS,36/36 figures traced
 BIDZ,2025,substantive,1,PASS,362 words
@@ -34,7 +34,7 @@ BIDZ,2025,substantive,8,PASS,419 words
 BIDZ,2025,length_vs_real,8,INFO,2928 chars vs real median 171195 chars (2%)
 BIDZ,2025,real_company_leak,8,PASS,none found
 BIDZ,2025,required_headings,8,PASS,all present
-BIDZ,2025,scenario_grounding,1/1a/7/8,PASS,matched: ['reimbursement']
+BIDZ,2025,scenario_grounding,1/1a/7/8,PASS,[margin_crisis] matched: ['reimbursement']
 BIDZ,2025,numeric_consistency,7,PASS,39/39 figures traced
 BIDZ,2025,numeric_consistency,8,PASS,39/39 figures traced
 CRJ,2024,substantive,1,PASS,323 words
@@ -71,7 +71,7 @@ EASS,2025,substantive,8,PASS,463 words
 EASS,2025,length_vs_real,8,INFO,3188 chars vs real median 171195 chars (2%)
 EASS,2025,real_company_leak,8,PASS,none found
 EASS,2025,required_headings,8,PASS,all present
-EASS,2025,scenario_grounding,1/1a/7/8,PASS,'Thornridge Packaging Corp.' found
+EASS,2025,scenario_grounding,1/1a/7/8,PASS,[mergers_and_acquisitions] 'Thornridge Packaging Corp.' found
 EASS,2025,numeric_consistency,7,PASS,39/39 figures traced
 EASS,2025,numeric_consistency,8,PASS,40/40 figures traced
 FAI,2025,substantive,1,PASS,245 words
@@ -108,7 +108,7 @@ FTC,2024,substantive,8,PASS,466 words
 FTC,2024,length_vs_real,8,INFO,3246 chars vs real median 171195 chars (2%)
 FTC,2024,real_company_leak,8,PASS,none found
 FTC,2024,required_headings,8,PASS,all present
-FTC,2024,scenario_grounding,1/1a/7/8,PASS,"'Carrowgate Capital Partners, Inc.' found"
+FTC,2024,scenario_grounding,1/1a/7/8,PASS,"[mergers_and_acquisitions] 'Carrowgate Capital Partners, Inc.' found"
 FTC,2024,numeric_consistency,7,PASS,42/42 figures traced
 FTC,2024,numeric_consistency,8,PASS,39/39 figures traced
 GKRH,2025,substantive,1,PASS,390 words
@@ -127,7 +127,7 @@ GKRH,2025,substantive,8,PASS,349 words
 GKRH,2025,length_vs_real,8,INFO,2418 chars vs real median 171195 chars (1%)
 GKRH,2025,real_company_leak,8,PASS,none found
 GKRH,2025,required_headings,8,PASS,all present
-GKRH,2025,scenario_grounding,1/1a/7/8,PASS,matched: ['consent order']
+GKRH,2025,scenario_grounding,1/1a/7/8,PASS,[regulatory_consent_order] matched: ['consent order']
 GKRH,2025,numeric_consistency,7,PASS,31/31 figures traced
 GKRH,2025,numeric_consistency,8,PASS,28/28 figures traced
 GOG,2023,substantive,1,PASS,323 words
@@ -146,7 +146,7 @@ GOG,2023,substantive,8,PASS,399 words
 GOG,2023,length_vs_real,8,INFO,2689 chars vs real median 171195 chars (2%)
 GOG,2023,real_company_leak,8,PASS,none found
 GOG,2023,required_headings,8,PASS,all present
-GOG,2023,scenario_grounding,1/1a/7/8,PASS,'SentinelFlow' found
+GOG,2023,scenario_grounding,1/1a/7/8,PASS,[product_launch] 'SentinelFlow' found
 GOG,2023,numeric_consistency,7,PASS,39/39 figures traced
 GOG,2023,numeric_consistency,8,PASS,38/38 figures traced
 HZP,2025,substantive,1,PASS,302 words
@@ -165,7 +165,7 @@ HZP,2025,substantive,8,PASS,399 words
 HZP,2025,length_vs_real,8,INFO,2681 chars vs real median 171195 chars (2%)
 HZP,2025,real_company_leak,8,PASS,none found
 HZP,2025,required_headings,8,PASS,all present
-HZP,2025,scenario_grounding,1/1a/7/8,PASS,"matched: ['migrat', 'competing', 'displac']"
+HZP,2025,scenario_grounding,1/1a/7/8,PASS,"[competitive_displacement] matched: ['migrat', 'competing', 'displac']"
 HZP,2025,numeric_consistency,7,PASS,39/39 figures traced
 HZP,2025,numeric_consistency,8,PASS,38/38 figures traced
 JFG,2024,substantive,1,PASS,297 words
@@ -202,7 +202,7 @@ KMW,2024,substantive,8,PASS,422 words
 KMW,2024,length_vs_real,8,INFO,2958 chars vs real median 171195 chars (2%)
 KMW,2024,real_company_leak,8,PASS,none found
 KMW,2024,required_headings,8,PASS,all present
-KMW,2024,scenario_grounding,1/1a/7/8,PASS,"matched: ['pricing', 'pharmacy benefit', 'drug pricing']"
+KMW,2024,scenario_grounding,1/1a/7/8,PASS,"[regulatory_pricing_pressure] matched: ['pricing', 'pharmacy benefit', 'drug pricing']"
 KMW,2024,numeric_consistency,7,PASS,40/40 figures traced
 KMW,2024,numeric_consistency,8,PASS,39/39 figures traced
 NDE,2025,substantive,1,PASS,454 words
@@ -221,7 +221,7 @@ NDE,2025,substantive,8,PASS,464 words
 NDE,2025,length_vs_real,8,INFO,3159 chars vs real median 171195 chars (2%)
 NDE,2025,real_company_leak,8,PASS,none found
 NDE,2025,required_headings,8,PASS,all present
-NDE,2025,scenario_grounding,1/1a/7/8,PASS,matched: ['repurchase']
+NDE,2025,scenario_grounding,1/1a/7/8,PASS,[capital_structure] matched: ['repurchase']
 NDE,2025,numeric_consistency,7,PASS,43/43 figures traced
 NDE,2025,numeric_consistency,8,PASS,44/44 figures traced
 PKPM,2025,substantive,1,PASS,271 words
@@ -258,7 +258,7 @@ PRG,2024,substantive,8,PASS,507 words
 PRG,2024,length_vs_real,8,INFO,3495 chars vs real median 171195 chars (2%)
 PRG,2024,real_company_leak,8,PASS,none found
 PRG,2024,required_headings,8,PASS,all present
-PRG,2024,scenario_grounding,1/1a/7/8,PASS,"'Dunmore Technologies, Inc.' found"
+PRG,2024,scenario_grounding,1/1a/7/8,PASS,"[mergers_and_acquisitions] 'Dunmore Technologies, Inc.' found"
 PRG,2024,numeric_consistency,7,PASS,44/44 figures traced
 PRG,2024,numeric_consistency,8,PASS,45/45 figures traced
 SKR,2023,substantive,1,PASS,298 words
@@ -313,7 +313,7 @@ TVZ,2024,substantive,8,PASS,463 words
 TVZ,2024,length_vs_real,8,INFO,3153 chars vs real median 171195 chars (2%)
 TVZ,2024,real_company_leak,8,PASS,none found
 TVZ,2024,required_headings,8,PASS,all present
-TVZ,2024,scenario_grounding,1/1a/7/8,PASS,matched: ['repurchase']
+TVZ,2024,scenario_grounding,1/1a/7/8,PASS,[capital_structure] matched: ['repurchase']
 TVZ,2024,numeric_consistency,7,PASS,41/41 figures traced
 TVZ,2024,numeric_consistency,8,PASS,44/44 figures traced
 VQWP,2023,substantive,1,PASS,341 words
@@ -332,7 +332,7 @@ VQWP,2023,substantive,8,PASS,446 words
 VQWP,2023,length_vs_real,8,INFO,3062 chars vs real median 171195 chars (2%)
 VQWP,2023,real_company_leak,8,PASS,none found
 VQWP,2023,required_headings,8,PASS,all present
-VQWP,2023,scenario_grounding,1/1a/7/8,PASS,matched: ['storm']
+VQWP,2023,scenario_grounding,1/1a/7/8,PASS,[weather_event] matched: ['storm']
 VQWP,2023,numeric_consistency,7,PASS,39/39 figures traced
 VQWP,2023,numeric_consistency,8,PASS,38/38 figures traced
 WJE,2025,substantive,1,PASS,248 words
@@ -351,7 +351,7 @@ WJE,2025,substantive,8,PASS,422 words
 WJE,2025,length_vs_real,8,INFO,2842 chars vs real median 171195 chars (2%)
 WJE,2025,real_company_leak,8,PASS,none found
 WJE,2025,required_headings,8,PASS,all present
-WJE,2025,scenario_grounding,1/1a/7/8,PASS,matched: ['profitability']
+WJE,2025,scenario_grounding,1/1a/7/8,PASS,[cash_burn] matched: ['profitability']
 WJE,2025,numeric_consistency,7,PASS,38/38 figures traced
 WJE,2025,numeric_consistency,8,PASS,41/41 figures traced
 XTE,2025,substantive,1,PASS,252 words

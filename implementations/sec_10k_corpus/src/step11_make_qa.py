@@ -22,6 +22,14 @@ the rare case where the same figure is restated in more than one chunk (e.g. bot
 prose sentence and a financial-statement table row). Retrieval of the other,
 unrecorded chunk would be scored as a miss. See PLAN.md Phase 9.
 
+Every question carries a `style`: "factual" (a single figure or named entity -- the
+answer is the whole point) or "analytical" (why something happened, or what it
+implies -- the answer is still a short exact span, but finding it requires reading
+a passage that connects a cause to an effect, not just locating a labeled figure).
+Analytical questions are grounded the same way: a chunk search, verified at
+generation time, never a paraphrase. See PLAN.md Phase 9 for which chunks turned out
+to state cause and effect together (no new grounding invented to force this).
+
 Run from the project directory (after src.step03_build_index):
     python -m src.step11_make_qa
 """
@@ -47,7 +55,7 @@ logger = setup_logging("make_qa")
 
 SYNTHETIC_DIR = RAW_DIR.parent / "synthetic"
 QA_PATH = RAW_DIR.parent / "qa_pairs.csv"
-QA_FIELDS = ["qa_id", "source", "ticker", "fiscal_year", "item", "question", "answer", "gold_chunk_id"]
+QA_FIELDS = ["qa_id", "source", "ticker", "fiscal_year", "item", "style", "question", "answer", "gold_chunk_id"]
 
 # (path through financials.json, question template, is_percent)
 FINANCIAL_FACTS = [
@@ -56,19 +64,38 @@ FINANCIAL_FACTS = [
     (("balance_sheet", "assets", "total_assets"), "What were {name}'s total assets as of the end of fiscal {fy}?", False),
 ]
 
-# One question template per keyword-grounded scenario type (src.step06b_add_scenarios).
-# The two anchor-fact types (mergers_and_acquisitions, product_launch) are handled
-# separately below since their answer is a proper noun, not a matched keyword.
+# One "why" question per keyword-grounded scenario type (src.step06b_add_scenarios),
+# phrased so answering it requires reading the passage that connects the scenario's
+# cause to its effect, not just matching a category label. The two anchor-fact types
+# (mergers_and_acquisitions, product_launch) are handled separately below since their
+# answer is a proper noun, not a matched keyword.
 SCENARIO_KEYWORD_QUESTIONS = {
-    "competitive_displacement": "What competitive event affected {name}'s customer base during fiscal {fy}?",
-    "margin_crisis": "What type of rate pressure did {name} cite as driving its fiscal {fy} margin compression?",
-    "capital_structure": "What capital allocation activity is funded substantially through debt issuance at {name}?",
-    "cash_burn": "What financial milestone had {name} not yet reached as of fiscal {fy}, per its MD&A?",
-    "regulatory_rate_case": "What type of regulatory proceeding affected {name}'s fiscal {fy} results?",
-    "weather_event": "What type of event caused incremental restoration costs for {name} during fiscal {fy}?",
-    "regulatory_pricing_pressure": "What type of pricing-related regulatory measures affected {name}'s fiscal {fy} margins?",
-    "regulatory_consent_order": "What specific type of formal regulatory action did {name} enter into during fiscal {fy}?",
+    "competitive_displacement": "Why did {name}'s operating margin come under pressure during fiscal {fy}?",
+    "margin_crisis": "Why did {name}'s margins compress to historically thin levels in fiscal {fy}?",
+    "capital_structure": "What is driving {name}'s elevated financial leverage?",
+    "cash_burn": "Why did {name} record an operating loss in fiscal {fy} rather than sustained profitability?",
+    "regulatory_rate_case": "Why did {name} fall short of recovering its full requested costs in fiscal {fy}?",
+    "weather_event": "Why did {name}'s fiscal {fy} capital spending include incremental restoration costs?",
+    "regulatory_pricing_pressure": "Why did regulatory changes affect {name}'s margins during fiscal {fy}?",
+    "regulatory_consent_order": "Why did {name}'s compliance-related costs increase during fiscal {fy}?",
 }
+
+# For these two scenario types, the narrative states the scenario's driver and its
+# financial-statement outcome in the *same* paragraph (verified for BIDZ and WJE, the
+# only two companies with these types, at generation time -- not assumed). That makes
+# a richer question answerable from one passage: the exact phrase here is the
+# qualitative severity language the narrative uses, not a bare number, so answering it
+# requires reading past the figures to the sentence that characterizes them.
+SEVERITY_PHRASE_QUESTIONS = {
+    "margin_crisis": ("How severe does {name} describe its fiscal {fy} margin compression?", "thinnest margins"),
+    "cash_burn": ("What does {name}'s fiscal {fy} operating loss reflect about its stage of growth, per its MD&A?", "ahead of sustained profitability"),
+}
+
+# Verified present in the risk-factor item of every company with the matching
+# scenario type -- not guaranteed by construction, checked directly in the narrative,
+# same as every other grounding in this file.
+ACQUISITION_RISK_PHRASE = "may not realize the anticipated benefits"
+PRODUCT_LAUNCH_RISK_PHRASE = "may not realize the expected benefits"
 
 # Hand-authored from the real company behind each sampled fictional company's template
 # (ticker, fiscal_year) -- the same 6-company sample used for Phase 7's model-judged
@@ -154,12 +181,19 @@ def find_figure_chunk(value: float, chunks: list[Chunk], *, is_percent: bool) ->
     return None
 
 
-def qa_row(source: str, ticker: str, fy: int, item: str, question: str, answer: str, gold_chunk_id: str) -> dict:
+def find_phrase_chunk(phrase: str, chunks: list[Chunk]) -> Chunk | None:
+    """Return the first chunk whose text contains `phrase` (case-insensitive)."""
+    lowered = phrase.lower()
+    return next((c for c in chunks if lowered in c.text.lower()), None)
+
+
+def qa_row(source: str, ticker: str, fy: int, item: str, style: str, question: str, answer: str, gold_chunk_id: str) -> dict:
     return {
         "source": source,
         "ticker": ticker,
         "fiscal_year": fy,
         "item": item,
+        "style": style,
         "question": question,
         "answer": answer,
         "gold_chunk_id": gold_chunk_id,
@@ -184,13 +218,22 @@ def scenario_qa_rows(spec: dict, company_chunks: list[Chunk]) -> list[dict]:
                 if scenario_type == "mergers_and_acquisitions"
                 else f"What new product did {name} launch during fiscal {fy}?"
             )
-            rows.append(qa_row("synthetic", ticker, fy, chunk.item, question, anchor_value, chunk.chunk_id))
+            rows.append(qa_row("synthetic", ticker, fy, chunk.item, "factual", question, anchor_value, chunk.chunk_id))
         if scenario_type == "mergers_and_acquisitions":
             found = find_figure_chunk(float(facts["purchase_price"]), company_chunks, is_percent=False)
             if found:
                 price_chunk, price_answer = found
                 question = f"How much did {name} pay to acquire {facts['acquired_name']}?"
-                rows.append(qa_row("synthetic", ticker, fy, price_chunk.item, question, price_answer, price_chunk.chunk_id))
+                rows.append(qa_row("synthetic", ticker, fy, price_chunk.item, "factual", question, price_answer, price_chunk.chunk_id))
+            risk_chunk = find_phrase_chunk(ACQUISITION_RISK_PHRASE, company_chunks)
+            if risk_chunk:
+                question = f"What integration risk does {name} face following its acquisition of {facts['acquired_name']}?"
+                rows.append(qa_row("synthetic", ticker, fy, risk_chunk.item, "analytical", question, ACQUISITION_RISK_PHRASE, risk_chunk.chunk_id))
+        if scenario_type == "product_launch":
+            risk_chunk = find_phrase_chunk(PRODUCT_LAUNCH_RISK_PHRASE, company_chunks)
+            if risk_chunk:
+                question = f"What risk does {name} face related to its launch of {facts['product_name']}?"
+                rows.append(qa_row("synthetic", ticker, fy, risk_chunk.item, "analytical", question, PRODUCT_LAUNCH_RISK_PHRASE, risk_chunk.chunk_id))
         return rows
 
     template = SCENARIO_KEYWORD_QUESTIONS.get(scenario_type)
@@ -203,7 +246,19 @@ def scenario_qa_rows(spec: dict, company_chunks: list[Chunk]) -> list[dict]:
         if matched_keyword:
             m = re.search(re.escape(matched_keyword) + r"\w*", chunk.text, re.IGNORECASE)
             answer = m.group(0) if m else matched_keyword
-            rows.append(qa_row("synthetic", ticker, fy, chunk.item, template.format(name=name, fy=fy), answer, chunk.chunk_id))
+            rows.append(qa_row("synthetic", ticker, fy, chunk.item, "analytical", template.format(name=name, fy=fy), answer, chunk.chunk_id))
+
+            severity = SEVERITY_PHRASE_QUESTIONS.get(scenario_type)
+            if severity:
+                severity_template, phrase = severity
+                if phrase.lower() in lowered:
+                    m2 = re.search(re.escape(phrase), chunk.text, re.IGNORECASE)
+                    rows.append(
+                        qa_row(
+                            "synthetic", ticker, fy, chunk.item, "analytical",
+                            severity_template.format(name=name, fy=fy), m2.group(0), chunk.chunk_id,
+                        ),
+                    )
             break
     return rows
 
@@ -222,7 +277,7 @@ def synthetic_qa_rows(spec_path, all_chunks: list[Chunk]) -> list[dict]:
         found = find_figure_chunk(value, company_chunks, is_percent=is_percent)
         if found:
             chunk, answer = found
-            rows.append(qa_row("synthetic", ticker, fy, chunk.item, template.format(name=name, fy=fy), answer, chunk.chunk_id))
+            rows.append(qa_row("synthetic", ticker, fy, chunk.item, "factual", template.format(name=name, fy=fy), answer, chunk.chunk_id))
 
     revenue = get_field(financials, ("income_statement", "revenues"))
     net_income = get_field(financials, ("income_statement", "net_income"))
@@ -231,13 +286,13 @@ def synthetic_qa_rows(spec_path, all_chunks: list[Chunk]) -> list[dict]:
         found = find_figure_chunk(net_income / revenue * 100, company_chunks, is_percent=True)
         if found:
             chunk, answer = found
-            rows.append(qa_row("synthetic", ticker, fy, chunk.item, f"What was {name}'s net margin for fiscal {fy}?", answer, chunk.chunk_id))
+            rows.append(qa_row("synthetic", ticker, fy, chunk.item, "factual", f"What was {name}'s net margin for fiscal {fy}?", answer, chunk.chunk_id))
         if operating_income is not None:
             found = find_figure_chunk(operating_income / revenue * 100, company_chunks, is_percent=True)
             if found:
                 chunk, answer = found
                 question = f"What was {name}'s operating margin for fiscal {fy}?"
-                rows.append(qa_row("synthetic", ticker, fy, chunk.item, question, answer, chunk.chunk_id))
+                rows.append(qa_row("synthetic", ticker, fy, chunk.item, "factual", question, answer, chunk.chunk_id))
 
     rows.extend(scenario_qa_rows(spec, company_chunks))
     return rows
@@ -254,7 +309,7 @@ def real_qa_rows(chunks: list[Chunk]) -> list[dict]:
         chunk = next((c for c in candidates if answer in c.text), None)
         if chunk is None:
             raise SystemExit(f"Real QA answer not found verbatim: {ticker} FY{fy} item {item}: {answer!r}")
-        rows.append(qa_row("real", ticker, fy, item, question, answer, chunk.chunk_id))
+        rows.append(qa_row("real", ticker, fy, item, "factual", question, answer, chunk.chunk_id))
     return rows
 
 
