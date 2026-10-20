@@ -1,14 +1,13 @@
-"""Phase 9: evaluate BM25, a TF-IDF "dense" retriever, and their reciprocal-rank-
-fusion hybrid against data/qa_pairs.csv, across three corpus scopes (PLAN.md Phase 9):
-synthetic only, real only, and mixed.
+"""Phase 9: evaluate BM25, a real semantic embedding retriever, and their
+reciprocal-rank-fusion hybrid against data/qa_pairs.csv, across three corpus scopes
+(PLAN.md Phase 9): synthetic only, real only, and mixed.
 
 "Real" here means the same 6-company sample data/qa_pairs.csv's real questions come
-from (AEP, BEN, USB, CVS, NOC, CRWD) -- not all 50 real companies. A brute-force
-TF-IDF corpus built from the full ~730-row real index would need tens of thousands of
-paragraphs and a correspondingly large dense matrix; bounding it to the sample that
-already has hand-verified QA pairs keeps memory and runtime small without needing an
-approximate-nearest-neighbor library. See PLAN.md Phase 9 and src.retrieval's
-module docstring for why the "dense" retriever is TF-IDF, not a neural embedding.
+from (AEP, BEN, USB, CVS, NOC, CRWD) -- not all 50 real companies, which would mean
+embedding on the order of 500,000 paragraphs. Bounding it to the sample that already
+has hand-verified QA pairs keeps runtime to under a minute. See PLAN.md Phase 9 and
+src.retrieval's module docstring for the semantic retriever itself (fastembed +
+minishlab/potion-retrieval-32M, a static embedding model, not a transformer).
 
 Output: data/retrieval_eval.csv, one row per (experiment, retriever).
 
@@ -21,7 +20,7 @@ import io
 
 from src.chunks import Chunk, load_chunks
 from src.config import RAW_DIR
-from src.retrieval import Bm25Retriever, TfidfRetriever, ndcg_at_k, reciprocal_rank, reciprocal_rank_fusion, recall_at_k
+from src.retrieval import Bm25Retriever, SemanticRetriever, ndcg_at_k, reciprocal_rank, reciprocal_rank_fusion, recall_at_k
 from src.utils import setup_logging, write_atomic
 
 
@@ -86,19 +85,20 @@ def run_experiment(experiment: str, all_qa: list[dict]) -> list[dict]:
 
     chunk_ids = [c.chunk_id for c in chunks]
     texts = [c.text for c in chunks]
+    logger.info("%s: embedding %d chunks for the semantic retriever", experiment, len(texts))
     bm25 = Bm25Retriever(chunk_ids, texts)
-    tfidf = TfidfRetriever(chunk_ids, texts)
+    semantic = SemanticRetriever(chunk_ids, texts)
 
-    bm25_rankings, tfidf_rankings, hybrid_rankings = {}, {}, {}
+    bm25_rankings, semantic_rankings, hybrid_rankings = {}, {}, {}
     for q in qa_pairs:
         b = bm25.rank(q["question"])
-        t = tfidf.rank(q["question"])
+        s = semantic.rank(q["question"])
         bm25_rankings[q["qa_id"]] = b
-        tfidf_rankings[q["qa_id"]] = t
-        hybrid_rankings[q["qa_id"]] = reciprocal_rank_fusion([b, t])
+        semantic_rankings[q["qa_id"]] = s
+        hybrid_rankings[q["qa_id"]] = reciprocal_rank_fusion([b, s])
 
     rows = []
-    for name, rankings in [("bm25", bm25_rankings), ("tfidf_dense", tfidf_rankings), ("hybrid_rrf", hybrid_rankings)]:
+    for name, rankings in [("bm25", bm25_rankings), ("semantic", semantic_rankings), ("hybrid_rrf", hybrid_rankings)]:
         result = evaluate(qa_pairs, rankings, name)
         result["experiment"] = experiment
         rows.append(result)

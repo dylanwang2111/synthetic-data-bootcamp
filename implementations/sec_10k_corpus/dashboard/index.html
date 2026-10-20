@@ -1,0 +1,769 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SEC 10-K Synthetic Corpus: Results</title>
+<style>
+  /* ---- palette: dataviz skill's validated default (references/palette.md) ---- */
+  :root {
+    color-scheme: light;
+    --surface-1: #fcfcfb;      /* chart surface */
+    --page: #f9f9f7;           /* page plane */
+    --panel: #ffffff;
+    --ink-1: #0b0b0b;          /* primary */
+    --ink-2: #52514e;          /* secondary */
+    --ink-muted: #898781;      /* axis/labels */
+    --grid: #e1e0d9;
+    --axis: #c3c2b7;
+    --border: rgba(11,11,11,0.10);
+    --good: #0ca30c;
+    --warning: #fab219;
+    --critical: #d03b3b;
+    --series-1: #2a78d6;       /* blue   - bm25 / real */
+    --series-2: #eb6834;       /* orange - semantic / synthetic */
+    --series-3: #1baf7a;       /* aqua   - hybrid_rrf */
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --surface-1: #1a1a19;
+      --page: #0d0d0d;
+      --panel: #171716;
+      --ink-1: #f0efec;
+      --ink-2: #c3c2b7;
+      --ink-muted: #898781;
+      --grid: #2c2c2a;
+      --axis: #383835;
+      --border: rgba(255,255,255,0.10);
+      --good: #0ca30c;
+      --warning: #fab219;
+      --critical: #e66767;
+      --series-1: #3987e5;
+      --series-2: #d95926;
+      --series-3: #199e70;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--page);
+    color: var(--ink-1);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    line-height: 1.45;
+  }
+  code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: .92em; background: var(--surface-1); padding: .05em .35em; border-radius: .3em; }
+
+  .page { max-width: 76rem; margin-inline: auto; display: flex; flex-direction: column; gap: 2.5rem; padding: 1.75rem 1.25rem 4rem; }
+
+  .hdr { display: flex; flex-direction: column; gap: .6rem; }
+  .hdr h1 { font-size: 1.65rem; font-weight: 700; margin: 0; letter-spacing: -.01em; }
+  .hdr p { margin: 0; color: var(--ink-2); max-width: 54rem; }
+  .hdr .take { color: var(--ink-1); font-weight: 500; }
+
+  .jump { display: flex; flex-wrap: wrap; gap: .5rem; }
+  .jump a { font-size: .8rem; color: var(--ink-2); text-decoration: none; border: 1px solid var(--border); border-radius: 999px; padding: .3rem .8rem; white-space: nowrap; }
+  .jump a:hover { color: var(--ink-1); border-color: var(--ink-muted); }
+
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr)); gap: 1rem; }
+  .kpi { background: var(--panel); border: 1px solid var(--border); border-radius: .75rem; padding: 1.1rem 1.25rem; display: flex; flex-direction: column; gap: .3rem; min-height: 6.5rem; justify-content: center; }
+  .kpi .num { font-size: 1.9rem; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .kpi .lbl { font-size: .8rem; color: var(--ink-2); }
+  .kpi .sub { font-size: .78rem; color: var(--ink-muted); }
+
+  section.phase { display: flex; flex-direction: column; gap: 1.1rem; scroll-margin-top: 1rem; }
+  .phase-hdr { display: flex; flex-direction: column; gap: .15rem; border-bottom: 1px solid var(--border); padding-bottom: .6rem; }
+  .phase-hdr .eyebrow { font-size: .78rem; color: var(--ink-muted); text-transform: uppercase; letter-spacing: .07em; font-weight: 600; }
+  .phase-hdr h2 { font-size: 1.3rem; font-weight: 700; margin: 0; }
+  .phase-hdr p { margin: 0; color: var(--ink-2); font-size: .95rem; max-width: 58rem; }
+
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); gap: 1rem; align-items: start; }
+  .grid3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); gap: 1rem; align-items: start; }
+
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: .75rem; padding: 1.2rem; display: flex; flex-direction: column; gap: .65rem; min-width: 0; }
+  .card h3 { font-size: 1rem; font-weight: 700; margin: 0; }
+  .card .note { font-size: .8rem; color: var(--ink-2); margin: 0; }
+  .card.span-2 { grid-column: span 2; }
+  @media (max-width: 640px) { .card.span-2 { grid-column: span 1; } }
+
+  .stat-row { display: flex; align-items: baseline; gap: .5rem; flex-wrap: wrap; }
+  .stat-row .big { font-size: 1.6rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .stat-row .vs { color: var(--ink-2); font-size: .85rem; }
+
+  .pill { display: inline-flex; align-items: center; gap: .35rem; font-size: .78rem; padding: .15rem .55rem; border-radius: 999px; background: var(--surface-1); border: 1px solid var(--border); white-space: nowrap; }
+  .pill .dot { width: .45rem; height: .45rem; border-radius: 50%; flex: none; }
+
+  .table-tools { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; justify-content: space-between; }
+  .table-tools input[type="search"] { font: inherit; font-size: .85rem; padding: .4rem .7rem; border-radius: .5rem; border: 1px solid var(--border); background: var(--surface-1); color: var(--ink-1); min-width: 12rem; }
+  .table-tools .count { font-size: .8rem; color: var(--ink-muted); white-space: nowrap; }
+
+  .table-wrap { overflow: auto; border: 1px solid var(--border); border-radius: .5rem; max-height: 26rem; }
+  table.data { border-collapse: collapse; width: 100%; font-size: .85rem; font-variant-numeric: tabular-nums; }
+  table.data th { position: sticky; top: 0; background: var(--panel); text-align: left; border-bottom: 1px solid var(--border); z-index: 1; }
+  table.data th button { all: unset; cursor: pointer; display: flex; align-items: center; gap: .3rem; padding: .55rem .7rem; font-weight: 600; font-size: .78rem; color: var(--ink-2); white-space: nowrap; }
+  table.data th button:hover { color: var(--ink-1); }
+  table.data th button::after { content: ''; width: 0; height: 0; border-left: 4px solid transparent; border-right: 4px solid transparent; opacity: .35; }
+  table.data th[aria-sort="ascending"] button::after { border-bottom: 5px solid currentColor; opacity: 1; }
+  table.data th[aria-sort="descending"] button::after { border-top: 5px solid currentColor; opacity: 1; }
+  table.data td { padding: .5rem .7rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+  table.data tbody tr:last-child td { border-bottom: none; }
+  table.data tbody tr:hover { background: var(--surface-1); }
+  td.wrap { white-space: normal; min-width: 14rem; }
+  td.mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: .78rem; color: var(--ink-2); background: none; padding: .5rem .7rem; }
+  td.num { text-align: right; }
+
+  .chart-box { min-height: 15rem; }
+  .chart-box svg { width: 100%; height: auto; overflow: visible; }
+  .legend { display: flex; gap: 1rem; flex-wrap: wrap; font-size: .78rem; color: var(--ink-2); }
+  .legend .sw { display: inline-flex; align-items: center; gap: .35rem; }
+  .legend .sw i { width: .6rem; height: .6rem; border-radius: 2px; display: inline-block; }
+
+  .tip { position: absolute; pointer-events: none; background: var(--panel); border: 1px solid var(--border); border-radius: .5rem; box-shadow: 0 4px 16px rgba(0,0,0,.15); padding: .4rem .6rem; font-size: .78rem; line-height: 1.4; transform: translate(-50%, -110%); white-space: nowrap; opacity: 0; transition: opacity .1s; z-index: 5; }
+  .chart-wrap { position: relative; }
+
+  .verdict { border-left: 3px solid var(--ink-muted); padding-left: 1rem; display: flex; flex-direction: column; gap: .4rem; }
+  .verdict p { margin: 0; line-height: 1.55; }
+  .foot { color: var(--ink-muted); font-size: .8rem; line-height: 1.6; border-top: 1px solid var(--border); padding-top: 1rem; }
+  .foot code { background: none; padding: 0; }
+
+  .loading, .error { padding: 3rem 1rem; text-align: center; color: var(--ink-2); }
+  .error { color: var(--critical); }
+</style>
+</head>
+<body>
+
+<div class="page" id="app">
+
+  <div class="hdr">
+    <h1>SEC 10-K Synthetic Corpus: Results</h1>
+    <p><span id="company-count-intro">—</span> fictional companies, validated against their own financial statements and benchmarked for retrieval against a large real S&amp;P 500 comparison corpus. <span class="take" id="takeaway">Loading…</span></p>
+    <nav class="jump">
+      <a href="#phase7">Phase 7 &middot; Validation</a>
+      <a href="#phase9">Phase 9 &middot; QA &amp; Retrieval</a>
+      <a href="#phase10">Phase 10 &middot; Synthetic vs. Real Gap</a>
+    </nav>
+  </div>
+
+  <div class="kpis" id="kpi-strip">
+    <div class="kpi">
+      <div class="num" id="kpi-total-checks">—</div>
+      <div class="lbl">validation checks run</div>
+      <div class="sub" id="companies-sub">—</div>
+    </div>
+    <div class="kpi">
+      <div class="num" id="pass-rate-num">—</div>
+      <div class="lbl">validation pass rate</div>
+      <div class="sub" id="pass-rate-sub">—</div>
+    </div>
+    <div class="kpi">
+      <div class="num" id="kpi-qa-total">—</div>
+      <div class="lbl">QA pairs generated</div>
+      <div class="sub" id="qa-split">—</div>
+    </div>
+    <div class="kpi">
+      <div class="num" id="kpi-best-retriever" style="text-transform: uppercase;">—</div>
+      <div class="lbl">top retriever, both corpora</div>
+      <div class="sub">by recall@10</div>
+    </div>
+    <div class="kpi">
+      <div class="num" id="length-ratio">—</div>
+      <div class="lbl">median synthetic section length</div>
+      <div class="sub">vs. real, across 5 items</div>
+    </div>
+  </div>
+
+  <!-- ================= PHASE 7 ================= -->
+  <section class="phase" id="phase7">
+    <div class="phase-hdr">
+      <div class="eyebrow">Phase 7</div>
+      <h2>Validation: does the synthetic narrative hold up?</h2>
+      <p>Every item file for every fictional company, checked against its own <code>financials.json</code> and <code>spec.json</code> scenario: every dollar figure and percentage traced back to source, no real company name or ticker leaking in, every required statement heading present, and — for each company with a scenario — the scenario actually grounded in the narrative text, not just recorded in the spec.</p>
+    </div>
+
+    <div class="grid3">
+      <div class="card">
+        <h3>Checks by type</h3>
+        <p class="note">PASS / FAIL / INFO counts across every company. <code>length_vs_real</code> is reported for context, not gated — see note below.</p>
+        <div class="table-wrap" style="max-height: 20rem;">
+          <table class="data" id="tbl-by-check">
+            <thead><tr>
+              <th data-col="check"><button>Check</button></th>
+              <th data-col="total" data-num="1"><button>Total</button></th>
+              <th data-col="pass" data-num="1"><button>Pass</button></th>
+              <th data-col="fail" data-num="1"><button>Fail</button></th>
+              <th data-col="info" data-num="1"><button>Info</button></th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card span-2">
+        <h3>Per-company scenario grounding</h3>
+        <p class="note">What each company's <code>spec.json</code> scenario was grounded on, and whether its checks all passed. A company with no scenario shows "baseline (no scenario)".</p>
+        <div class="table-wrap" style="max-height: 20rem;">
+          <table class="data" id="tbl-by-company">
+            <thead><tr>
+              <th data-col="fictional_id"><button>Company</button></th>
+              <th data-col="fiscal_year"><button>FY</button></th>
+              <th data-col="total" data-num="1"><button>Checks</button></th>
+              <th data-col="fail" data-num="1"><button>Fail</button></th>
+              <th data-col="scenario"><button>Scenario grounding</button></th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>All checks</h3>
+      <p class="note">One row per company &times; fiscal year &times; check &times; item. Search across every column, or click a header to sort.</p>
+      <div class="table-tools">
+        <input type="search" id="search-validation" placeholder="Search e.g. GKRH, numeric_consistency, FAIL…" aria-label="Search validation rows">
+        <span class="count" id="count-validation"></span>
+      </div>
+      <div class="table-wrap">
+        <table class="data" id="tbl-validation">
+          <thead><tr>
+            <th data-col="fictional_id"><button>Company</button></th>
+            <th data-col="fiscal_year"><button>FY</button></th>
+            <th data-col="check"><button>Check</button></th>
+            <th data-col="item"><button>Item</button></th>
+            <th data-col="status"><button>Status</button></th>
+            <th data-col="detail"><button>Detail</button></th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= PHASE 9 ================= -->
+  <section class="phase" id="phase9">
+    <div class="phase-hdr">
+      <div class="eyebrow">Phase 9</div>
+      <h2>QA pairs and retrieval evaluation</h2>
+      <p>Every question has an exact answer and a gold passage. Synthetic questions are generated deterministically from each company's own financial statements and scenario facts — no model call, so the answer is guaranteed to be a verbatim substring of its gold passage by construction. Real questions are hand-authored from a 6-company real-filing sample, each checked against the actual text before being kept. Three retrievers — BM25, a real semantic embedding retriever, and their reciprocal-rank-fusion hybrid — are scored on recall@5, recall@10, MRR and nDCG@10, across three corpus scopes.</p>
+    </div>
+
+    <div class="grid3">
+      <div class="card">
+        <h3>Questions by source</h3>
+        <div class="stat-row"><span class="big" id="qa-synthetic">—</span><span class="vs">synthetic</span></div>
+        <div class="stat-row"><span class="big" id="qa-real">—</span><span class="vs">real (6-company sample)</span></div>
+        <p class="note">Synthetic: revenue, net income, total assets, net margin, operating margin, plus one scenario question per non-baseline company. Real: AEP, BEN, USB, CVS, NOC, CRWD.</p>
+      </div>
+      <div class="card span-2">
+        <h3>Retrieval evaluation, all runs</h3>
+        <div class="table-wrap" style="max-height: 20rem;">
+          <table class="data" id="tbl-retrieval">
+            <thead><tr>
+              <th data-col="experiment"><button>Experiment</button></th>
+              <th data-col="retriever"><button>Retriever</button></th>
+              <th data-col="n_questions" data-num="1"><button>n</button></th>
+              <th data-col="recall_at_5" data-num="1"><button>Recall@5</button></th>
+              <th data-col="recall_at_10" data-num="1"><button>Recall@10</button></th>
+              <th data-col="mrr" data-num="1"><button>MRR</button></th>
+              <th data-col="ndcg_at_10" data-num="1"><button>nDCG@10</button></th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Retriever comparison by experiment</h3>
+      <p class="note">Same 4 metrics, same 0&ndash;100% axis, three corpus scopes. <code>real_only</code> and <code>mixed</code> use the same 6-company real sample as the QA pairs above, not all 50 real companies &mdash; embedding the full real corpus would mean roughly 500,000 paragraphs.</p>
+      <div class="legend" id="retrieval-legend"></div>
+      <div class="grid3" id="retrieval-charts"></div>
+    </div>
+
+    <div class="card">
+      <h3>All QA pairs</h3>
+      <p class="note">Every question, its exact answer, and the chunk id it's grounded in.</p>
+      <div class="table-tools">
+        <input type="search" id="search-qa" placeholder="Search e.g. PRG, acquire, margin…" aria-label="Search QA pairs">
+        <span class="count" id="count-qa"></span>
+      </div>
+      <div class="table-wrap">
+        <table class="data" id="tbl-qa">
+          <thead><tr>
+            <th data-col="source"><button>Source</button></th>
+            <th data-col="ticker"><button>Ticker</button></th>
+            <th data-col="fiscal_year"><button>FY</button></th>
+            <th data-col="item"><button>Item</button></th>
+            <th data-col="question"><button>Question</button></th>
+            <th data-col="answer"><button>Answer</button></th>
+            <th data-col="gold_chunk_id"><button>Gold chunk</button></th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= PHASE 10 ================= -->
+  <section class="phase" id="phase10">
+    <div class="phase-hdr">
+      <div class="eyebrow">Phase 10</div>
+      <h2>Synthetic vs. real: how big is the gap?</h2>
+      <p>Four comparisons between the synthetic corpus and the full real corpus — not the 6-company sample used elsewhere, since these don't need a dense-vector matrix: section length, vocabulary overlap, number-figure density, and whether retriever ranking agrees between the two.</p>
+    </div>
+
+    <div class="grid2">
+      <div class="card">
+        <h3>Median section length, real vs. synthetic</h3>
+        <p class="note">Words per item, log scale &mdash; synthetic runs <span id="length-ratio-note">—</span> of real's length depending on item.</p>
+        <div class="chart-wrap chart-box" id="chart-length"></div>
+      </div>
+      <div class="card">
+        <h3>Numeric figures per 1,000 words</h3>
+        <p class="note">Synthetic narrative states more numbers, more densely, than real MD&amp;A's more qualitative prose.</p>
+        <div class="chart-wrap chart-box" id="chart-density"></div>
+      </div>
+    </div>
+
+    <div class="grid3">
+      <div class="card">
+        <h3>Vocabulary overlap</h3>
+        <div class="stat-row"><span class="big" id="jaccard-val">—</span><span class="vs">Jaccard, top 3,000 terms each</span></div>
+        <div class="stat-row"><span class="big" id="coverage-val">—</span><span class="vs">of synthetic's top terms also in real's</span></div>
+        <p class="note">Synthetic's smaller vocabulary is largely a subset of real's &mdash; expected, since it was written from real exemplars as templates.</p>
+      </div>
+      <div class="card span-2">
+        <h3>BM25 score &amp; retriever ranking</h3>
+        <div class="verdict">
+          <p>Median top-1 BM25 score: <b id="bm25-real">—</b> (real sample) vs. <b id="bm25-synth">—</b> (synthetic) &mdash; not directly comparable, since BM25's IDF term depends on each corpus's own size.</p>
+          <p>Best retriever by recall@10: <b id="best-real">—</b> (real) and <b id="best-synth">—</b> (synthetic) &mdash; <span id="best-note">—</span>.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>All gap-report rows</h3>
+      <div class="table-wrap" style="max-height: 20rem;">
+        <table class="data" id="tbl-gap">
+          <thead><tr>
+            <th data-col="comparison"><button>Comparison</button></th>
+            <th data-col="metric"><button>Metric</button></th>
+            <th data-col="real"><button>Real</button></th>
+            <th data-col="synthetic"><button>Synthetic</button></th>
+            <th data-col="note"><button>Note</button></th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card verdict">
+      <h3>Verdict</h3>
+      <p>Synthetic is a reasonable proxy for <b>which retriever to pick</b> — the top choice agrees with real — and for exercising the retrieval pipeline end to end. It is <b>not</b> a proxy for realistic document length, numeric density, or absolute retrieval-score magnitude: all three differ by a large, now-quantified margin. Treat synthetic retrieval results as directional for retriever choice, not as an estimate of real-world recall or score values.</p>
+    </div>
+  </section>
+
+  <p class="foot">Built by <code>src/step09_validate_filings.py</code>, <code>step11_make_qa.py</code>, <code>step12_evaluate_retrievers.py</code> and <code>step13_gap_report.py</code> in the <code>sec_10k_corpus</code> pipeline. This page reads <code>data/validation_report.csv</code>, <code>data/qa_pairs.csv</code>, <code>data/retrieval_eval.csv</code> and <code>data/gap_report.csv</code> directly at load time &mdash; nothing on this page is typed in by hand, and it reflects whatever is in those four files right now. Serve this directory locally to view it (browsers block a local page from fetching local files directly): <code>python -m http.server</code> from the project root, then open <code>http://localhost:8000/dashboard/</code>.</p>
+
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script>
+(() => {
+  'use strict';
+  const fmtInt = d3.format(',');
+  const fmtPct1 = d3.format('.1%');
+  const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : NaN; };
+
+  const CHECK_ORDER = ['substantive', 'length_vs_real', 'real_company_leak', 'required_headings', 'scenario_grounding', 'numeric_consistency'];
+  const RETRIEVERS = ['bm25', 'semantic', 'hybrid_rrf'];
+  const RETRIEVER_LABEL = { bm25: 'BM25', semantic: 'Semantic', hybrid_rrf: 'Hybrid RRF' };
+  const RETRIEVER_COLOR = { bm25: 'var(--series-1)', semantic: 'var(--series-2)', hybrid_rrf: 'var(--series-3)' };
+  const METRICS = ['recall_at_5', 'recall_at_10', 'mrr', 'ndcg_at_10'];
+  const METRIC_LABEL = { recall_at_5: 'R@5', recall_at_10: 'R@10', mrr: 'MRR', ndcg_at_10: 'nDCG@10' };
+  const EXPERIMENTS = ['synthetic_only', 'real_only', 'mixed'];
+  const EXPERIMENT_LABEL = { synthetic_only: 'Synthetic only', real_only: 'Real only (6-co. sample)', mixed: 'Mixed' };
+
+  // ---------- derived aggregates over the raw validation/qa_pairs rows ----------
+  function computeValidationTotals(rows) {
+    const pass = rows.filter((r) => r.status === 'PASS').length;
+    const fail = rows.filter((r) => r.status === 'FAIL').length;
+    const info = rows.filter((r) => r.status === 'INFO').length;
+    const graded = pass + fail;
+    return { total: rows.length, pass, fail, info, passRate: graded ? pass / graded : 0, companies: new Set(rows.map((r) => r.fictional_id)).size };
+  }
+
+  function computeByCheck(rows) {
+    const byCheck = new Map();
+    for (const r of rows) {
+      if (!byCheck.has(r.check)) byCheck.set(r.check, { check: r.check, total: 0, pass: 0, fail: 0, info: 0 });
+      const c = byCheck.get(r.check);
+      c.total += 1;
+      if (r.status === 'PASS') c.pass += 1;
+      else if (r.status === 'FAIL') c.fail += 1;
+      else if (r.status === 'INFO') c.info += 1;
+    }
+    return CHECK_ORDER.filter((k) => byCheck.has(k)).map((k) => byCheck.get(k));
+  }
+
+  function computeByCompany(rows) {
+    const byCompany = new Map();
+    for (const r of rows) {
+      if (!byCompany.has(r.fictional_id)) {
+        byCompany.set(r.fictional_id, { fictional_id: r.fictional_id, fiscal_year: r.fiscal_year, total: 0, fail: 0, scenario: 'baseline (no scenario)' });
+      }
+      const c = byCompany.get(r.fictional_id);
+      c.total += 1;
+      if (r.status === 'FAIL') c.fail += 1;
+      if (r.check === 'scenario_grounding') c.scenario = r.detail;
+    }
+    return Array.from(byCompany.values()).sort((a, b) => a.fictional_id.localeCompare(b.fictional_id));
+  }
+
+  // ---------- generic sortable/searchable table ----------
+  function cellText(row, col) {
+    const v = row[col];
+    return v === undefined || v === null || v === '' ? '—' : String(v);
+  }
+
+  function setupTable({ tableId, searchId, countId, columns, rows, formatters = {} }) {
+    const table = document.getElementById(tableId);
+    const tbody = table.querySelector('tbody');
+    const searchInput = searchId ? document.getElementById(searchId) : null;
+    const countEl = countId ? document.getElementById(countId) : null;
+    let sortCol = null;
+    let sortDir = 1;
+
+    function render() {
+      let view = rows;
+      const q = (searchInput && searchInput.value || '').trim().toLowerCase();
+      if (q) view = view.filter((r) => columns.some((c) => cellText(r, c).toLowerCase().includes(q)));
+      if (sortCol) {
+        view = view.slice().sort((a, b) => {
+          const an = num(a[sortCol]); const bn = num(b[sortCol]);
+          let cmp;
+          if (Number.isFinite(an) && Number.isFinite(bn)) cmp = an - bn;
+          else cmp = String(a[sortCol] ?? '').localeCompare(String(b[sortCol] ?? ''));
+          return cmp * sortDir;
+        });
+      }
+      tbody.replaceChildren(...view.map((r) => {
+        const tr = document.createElement('tr');
+        tr.append(...columns.map((c) => {
+          const td = document.createElement('td');
+          const fmt = formatters[c];
+          td.textContent = fmt ? fmt(r) : cellText(r, c);
+          if (['detail', 'question', 'scenario', 'note'].includes(c)) td.classList.add('wrap');
+          if (c === 'gold_chunk_id') td.classList.add('mono');
+          return td;
+        }));
+        return tr;
+      }));
+      if (countEl) countEl.textContent = view.length + ' row' + (view.length === 1 ? '' : 's');
+    }
+
+    table.querySelectorAll('th').forEach((th) => {
+      const btn = th.querySelector('button');
+      const col = th.dataset.col;
+      btn.addEventListener('click', () => {
+        if (sortCol === col) sortDir = -sortDir; else { sortCol = col; sortDir = 1; }
+        table.querySelectorAll('th').forEach((h) => h.removeAttribute('aria-sort'));
+        th.setAttribute('aria-sort', sortDir === 1 ? 'ascending' : 'descending');
+        render();
+      });
+    });
+    if (searchInput) searchInput.addEventListener('input', render);
+    render();
+  }
+
+  // ---------- retrieval comparison: 3 small-multiple grouped bar charts ----------
+  function renderLegend() {
+    const el = document.getElementById('retrieval-legend');
+    el.replaceChildren(...RETRIEVERS.map((r) => {
+      const span = document.createElement('span');
+      span.className = 'sw';
+      span.innerHTML = '<i style="background:' + RETRIEVER_COLOR[r] + '"></i>';
+      span.append(RETRIEVER_LABEL[r]);
+      return span;
+    }));
+  }
+
+  function drawRetrievalChart(container, rows, experiment) {
+    container.replaceChildren();
+    const title = document.createElement('div');
+    title.className = 'note';
+    title.style.marginBottom = '.4rem';
+    title.textContent = EXPERIMENT_LABEL[experiment];
+    container.appendChild(title);
+
+    const width = container.clientWidth || 280;
+    const height = 220;
+    const margin = { top: 6, right: 6, bottom: 32, left: 32 };
+    const innerW = width - margin.left - margin.right;
+    const innerH = height - margin.top - margin.bottom;
+
+    const svg = d3.select(container).append('svg').attr('viewBox', `0 0 ${width} ${height}`);
+    const g = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+
+    const x0 = d3.scaleBand().domain(METRICS).range([0, innerW]).paddingInner(0.3);
+    const x1 = d3.scaleBand().domain(RETRIEVERS).range([0, x0.bandwidth()]).padding(0.12);
+    const y = d3.scaleLinear().domain([0, 1]).range([innerH, 0]);
+
+    g.append('g').attr('color', 'var(--grid)')
+      .call(d3.axisLeft(y).ticks(5).tickSize(-innerW).tickFormat(''))
+      .call((sel) => sel.select('.domain').remove());
+
+    g.append('g').attr('transform', `translate(0,${innerH})`).attr('color', 'var(--axis)')
+      .call(d3.axisBottom(x0).tickSize(0))
+      .call((sel) => sel.select('.domain').attr('stroke-opacity', .6))
+      .selectAll('text').attr('fill', 'var(--ink-muted)').attr('font-size', 10).attr('font-family', null)
+      .text((d) => METRIC_LABEL[d]);
+
+    g.append('g').attr('color', 'var(--axis)')
+      .call(d3.axisLeft(y).ticks(5).tickFormat(d3.format('.0%')))
+      .call((sel) => sel.select('.domain').remove())
+      .selectAll('text').attr('fill', 'var(--ink-muted)').attr('font-size', 10).attr('font-family', null);
+
+    const tip = d3.select(container).append('div').attr('class', 'tip');
+
+    const byMetric = g.selectAll('.mgroup').data(METRICS).join('g').attr('transform', (m) => `translate(${x0(m)},0)`);
+
+    byMetric.selectAll('rect').data((m) => RETRIEVERS.map((r) => {
+      const row = rows.find((row) => row.retriever === r);
+      return { metric: m, retriever: r, value: row ? num(row[m]) : 0 };
+    })).join('rect')
+      .attr('x', (d) => x1(d.retriever))
+      .attr('width', x1.bandwidth())
+      .attr('y', (d) => y(d.value))
+      .attr('height', (d) => innerH - y(d.value))
+      .attr('rx', 2)
+      .attr('fill', (d) => RETRIEVER_COLOR[d.retriever])
+      .on('mousemove', (event, d) => {
+        const [mx, my] = d3.pointer(event, container);
+        tip.style('left', mx + 'px').style('top', my + 'px').style('opacity', 1)
+          .html(`<b>${RETRIEVER_LABEL[d.retriever]}</b> &middot; ${METRIC_LABEL[d.metric]}: ${d.value.toFixed(3)}`);
+      })
+      .on('mouseleave', () => tip.style('opacity', 0));
+  }
+
+  // ---------- Phase 10 charts ----------
+  function drawLengthChart(container, rows) {
+    container.replaceChildren();
+    const ITEM_LABEL = { item_1_median_words: 'Item 1', item_1A_median_words: 'Item 1A', item_1C_median_words: 'Item 1C', item_7_median_words: 'Item 7', item_8_median_words: 'Item 8' };
+    const items = Object.keys(ITEM_LABEL).filter((k) => rows.some((r) => r.metric === k));
+
+    const width = container.clientWidth || 420;
+    const height = 260;
+    const margin = { top: 6, right: 10, bottom: 28, left: 42 };
+    const innerW = width - margin.left - margin.right;
+    const innerH = height - margin.top - margin.bottom;
+
+    const svg = d3.select(container).append('svg').attr('viewBox', `0 0 ${width} ${height}`);
+    const g = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+
+    const x0 = d3.scaleBand().domain(items).range([0, innerW]).paddingInner(0.35);
+    const series = ['real', 'synthetic'];
+    const x1 = d3.scaleBand().domain(series).range([0, x0.bandwidth()]).padding(0.15);
+    const y = d3.scaleLog().domain([100, 30000]).range([innerH, 0]).clamp(true);
+
+    g.append('g').attr('color', 'var(--grid)')
+      .call(d3.axisLeft(y).tickValues([100, 1000, 10000]).tickSize(-innerW).tickFormat(''))
+      .call((sel) => sel.select('.domain').remove());
+
+    g.append('g').attr('transform', `translate(0,${innerH})`)
+      .call(d3.axisBottom(x0).tickSize(0)).call((s) => s.select('.domain').attr('stroke', 'var(--axis)'))
+      .selectAll('text').attr('fill', 'var(--ink-muted)').attr('font-size', 10).attr('font-family', null)
+      .text((d) => ITEM_LABEL[d]);
+
+    g.append('g')
+      .call(d3.axisLeft(y).tickValues([100, 1000, 10000]).tickFormat(d3.format('~s'))).call((s) => s.select('.domain').remove())
+      .selectAll('text').attr('fill', 'var(--ink-muted)').attr('font-size', 10).attr('font-family', null);
+
+    const tip = d3.select(container).append('div').attr('class', 'tip');
+    const color = { real: 'var(--series-1)', synthetic: 'var(--series-2)' };
+
+    const byItem = g.selectAll('.g').data(items).join('g').attr('transform', (d) => `translate(${x0(d)},0)`);
+    byItem.selectAll('rect').data((item) => {
+      const row = rows.find((r) => r.metric === item);
+      return series.map((s) => ({ item, series: s, value: row ? num(row[s]) : 0 }));
+    }).join('rect')
+      .attr('x', (d) => x1(d.series)).attr('width', x1.bandwidth())
+      .attr('y', (d) => y(Math.max(d.value, 1))).attr('height', (d) => innerH - y(Math.max(d.value, 1)))
+      .attr('rx', 2).attr('fill', (d) => color[d.series])
+      .on('mousemove', (event, d) => {
+        const [mx, my] = d3.pointer(event, container);
+        tip.style('left', mx + 'px').style('top', my + 'px').style('opacity', 1)
+          .html(`<b>${d.series}</b> &middot; ${ITEM_LABEL[d.item]}: ${fmtInt(Math.round(d.value))} words`);
+      }).on('mouseleave', () => tip.style('opacity', 0));
+
+    const legend = d3.select(container).append('div').attr('class', 'legend').style('margin-top', '.5rem');
+    legend.selectAll('span').data(series).join('span').attr('class', 'sw')
+      .html((s) => `<i style="background:${color[s]}"></i>${s}`);
+  }
+
+  function drawDensityChart(container, rows) {
+    container.replaceChildren();
+    const METRIC_LABEL2 = { dollars_per_1k_words: 'Dollar figures', percents_per_1k_words: 'Percent figures' };
+    const items = Object.keys(METRIC_LABEL2).filter((k) => rows.some((r) => r.metric === k));
+
+    const width = container.clientWidth || 420;
+    const height = 260;
+    const margin = { top: 6, right: 10, bottom: 28, left: 32 };
+    const innerW = width - margin.left - margin.right;
+    const innerH = height - margin.top - margin.bottom;
+
+    const svg = d3.select(container).append('svg').attr('viewBox', `0 0 ${width} ${height}`);
+    const g = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+
+    const x0 = d3.scaleBand().domain(items).range([0, innerW]).paddingInner(0.35);
+    const series = ['real', 'synthetic'];
+    const x1 = d3.scaleBand().domain(series).range([0, x0.bandwidth()]).padding(0.15);
+    const maxVal = d3.max(rows.filter((r) => items.includes(r.metric)), (r) => Math.max(num(r.real), num(r.synthetic))) || 1;
+    const y = d3.scaleLinear().domain([0, maxVal * 1.15]).range([innerH, 0]);
+
+    g.append('g').attr('color', 'var(--grid)')
+      .call(d3.axisLeft(y).ticks(4).tickSize(-innerW).tickFormat(''))
+      .call((sel) => sel.select('.domain').remove());
+
+    g.append('g').attr('transform', `translate(0,${innerH})`)
+      .call(d3.axisBottom(x0).tickSize(0)).call((s) => s.select('.domain').attr('stroke', 'var(--axis)'))
+      .selectAll('text').attr('fill', 'var(--ink-muted)').attr('font-size', 10).attr('font-family', null)
+      .text((d) => METRIC_LABEL2[d]);
+
+    g.append('g')
+      .call(d3.axisLeft(y).ticks(4)).call((s) => s.select('.domain').remove())
+      .selectAll('text').attr('fill', 'var(--ink-muted)').attr('font-size', 10).attr('font-family', null);
+
+    const tip = d3.select(container).append('div').attr('class', 'tip');
+    const color = { real: 'var(--series-1)', synthetic: 'var(--series-2)' };
+
+    const byItem = g.selectAll('.g').data(items).join('g').attr('transform', (d) => `translate(${x0(d)},0)`);
+    byItem.selectAll('rect').data((item) => {
+      const row = rows.find((r) => r.metric === item);
+      return series.map((s) => ({ item, series: s, value: row ? num(row[s]) : 0 }));
+    }).join('rect')
+      .attr('x', (d) => x1(d.series)).attr('width', x1.bandwidth())
+      .attr('y', (d) => y(d.value)).attr('height', (d) => innerH - y(d.value))
+      .attr('rx', 2).attr('fill', (d) => color[d.series])
+      .on('mousemove', (event, d) => {
+        const [mx, my] = d3.pointer(event, container);
+        tip.style('left', mx + 'px').style('top', my + 'px').style('opacity', 1)
+          .html(`<b>${d.series}</b> &middot; ${METRIC_LABEL2[d.item]}: ${d.value.toFixed(2)} / 1,000 words`);
+      }).on('mouseleave', () => tip.style('opacity', 0));
+
+    const legend = d3.select(container).append('div').attr('class', 'legend').style('margin-top', '.5rem');
+    legend.selectAll('span').data(series).join('span').attr('class', 'sw')
+      .html((s) => `<i style="background:${color[s]}"></i>${s}`);
+  }
+
+  // ---------- load the 4 CSVs and render once ----------
+  Promise.all([
+    d3.csv('../data/validation_report.csv'),
+    d3.csv('../data/qa_pairs.csv'),
+    d3.csv('../data/retrieval_eval.csv'),
+    d3.csv('../data/gap_report.csv'),
+  ]).then(([validation, qa, retrieval, gap]) => {
+    render(validation, qa, retrieval, gap);
+  }).catch((err) => {
+    const app = document.getElementById('app');
+    const msg = document.createElement('div');
+    msg.className = 'error';
+    msg.innerHTML = '<p><b>Could not load the data files.</b></p>'
+      + '<p>Browsers block a page from fetching local files over <code>file://</code>. Serve this directory instead:</p>'
+      + '<p><code>cd implementations/sec_10k_corpus &amp;&amp; python -m http.server</code>, then open '
+      + '<code>http://localhost:8000/dashboard/</code>.</p>'
+      + '<p style="color: var(--ink-muted); font-size: .85rem;">' + String(err) + '</p>';
+    app.prepend(msg);
+  });
+
+  function render(validation, qa, retrieval, gap) {
+    // ---- Phase 7 ----
+    const totals = computeValidationTotals(validation);
+    document.getElementById('kpi-total-checks').textContent = fmtInt(totals.total);
+    document.getElementById('companies-sub').textContent = 'across ' + fmtInt(totals.companies) + ' companies';
+    document.getElementById('pass-rate-num').textContent = fmtPct1(totals.passRate);
+    document.getElementById('pass-rate-sub').textContent = fmtInt(totals.pass) + ' of ' + fmtInt(totals.pass + totals.fail) + ' checks passed';
+    document.getElementById('company-count-intro').textContent = fmtInt(totals.companies);
+    document.getElementById('takeaway').textContent = totals.fail === 0
+      ? 'All ' + fmtInt(totals.total) + ' automatic checks pass; the open question is how the corpus compares to real filings and what that means for benchmarking.'
+      : fmtInt(totals.fail) + ' check(s) are currently failing.';
+
+    setupTable({ tableId: 'tbl-by-check', columns: ['check', 'total', 'pass', 'fail', 'info'], rows: computeByCheck(validation) });
+    setupTable({ tableId: 'tbl-by-company', columns: ['fictional_id', 'fiscal_year', 'total', 'fail', 'scenario'], rows: computeByCompany(validation) });
+    setupTable({
+      tableId: 'tbl-validation', searchId: 'search-validation', countId: 'count-validation',
+      columns: ['fictional_id', 'fiscal_year', 'check', 'item', 'status', 'detail'], rows: validation,
+    });
+
+    // ---- Phase 9 ----
+    const qaSynthetic = qa.filter((r) => r.source === 'synthetic').length;
+    const qaReal = qa.filter((r) => r.source === 'real').length;
+    document.getElementById('kpi-qa-total').textContent = fmtInt(qa.length);
+    document.getElementById('qa-split').textContent = fmtInt(qaSynthetic) + ' synthetic, ' + fmtInt(qaReal) + ' real';
+    document.getElementById('qa-synthetic').textContent = fmtInt(qaSynthetic);
+    document.getElementById('qa-real').textContent = fmtInt(qaReal);
+
+    setupTable({
+      tableId: 'tbl-retrieval',
+      columns: ['experiment', 'retriever', 'n_questions', 'recall_at_5', 'recall_at_10', 'mrr', 'ndcg_at_10'],
+      rows: retrieval,
+      formatters: {
+        recall_at_5: (r) => fmtPct1(num(r.recall_at_5)), recall_at_10: (r) => fmtPct1(num(r.recall_at_10)),
+        mrr: (r) => num(r.mrr).toFixed(2), ndcg_at_10: (r) => num(r.ndcg_at_10).toFixed(2),
+      },
+    });
+    setupTable({
+      tableId: 'tbl-qa', searchId: 'search-qa', countId: 'count-qa',
+      columns: ['source', 'ticker', 'fiscal_year', 'item', 'question', 'answer', 'gold_chunk_id'], rows: qa,
+    });
+
+    renderLegend();
+    const container = document.getElementById('retrieval-charts');
+    EXPERIMENTS.forEach((exp) => {
+      const panel = document.createElement('div');
+      panel.className = 'chart-wrap chart-box';
+      container.appendChild(panel);
+      drawRetrievalChart(panel, retrieval.filter((r) => r.experiment === exp), exp);
+    });
+
+    const bestRow = retrieval.filter((r) => r.experiment === 'synthetic_only').sort((a, b) => num(b.recall_at_10) - num(a.recall_at_10))[0];
+    if (bestRow) document.getElementById('kpi-best-retriever').textContent = bestRow.retriever;
+
+    // ---- Phase 10 ----
+    setupTable({ tableId: 'tbl-gap', columns: ['comparison', 'metric', 'real', 'synthetic', 'note'], rows: gap });
+
+    const byMetric = (metric) => gap.find((r) => r.metric === metric);
+    const lengthRows = gap.filter((r) => r.comparison === 'section_length');
+    const densityRows = gap.filter((r) => r.comparison === 'number_distribution');
+    if (lengthRows.length) drawLengthChart(document.getElementById('chart-length'), lengthRows);
+    if (densityRows.length) drawDensityChart(document.getElementById('chart-density'), densityRows);
+
+    if (lengthRows.length) {
+      const ratios = lengthRows.map((r) => num(r.synthetic) / num(r.real));
+      const ratioText = fmtPct1(d3.min(ratios)) + '–' + fmtPct1(d3.max(ratios));
+      document.getElementById('length-ratio').textContent = ratioText;
+      document.getElementById('length-ratio-note').textContent = ratioText;
+    }
+
+    const jaccardRow = byMetric('jaccard_top_3000_terms');
+    if (jaccardRow) {
+      document.getElementById('jaccard-val').textContent = fmtPct1(num(jaccardRow.real));
+      document.getElementById('coverage-val').textContent = fmtPct1(num(jaccardRow.synthetic));
+    }
+    const bm25Row = byMetric('median_top1_score');
+    if (bm25Row) {
+      document.getElementById('bm25-real').textContent = num(bm25Row.real).toFixed(2);
+      document.getElementById('bm25-synth').textContent = num(bm25Row.synthetic).toFixed(2);
+    }
+    const bestAgreeRow = byMetric('best_retriever_by_recall_at_10');
+    if (bestAgreeRow) {
+      document.getElementById('best-real').textContent = (RETRIEVER_LABEL[bestAgreeRow.real] || bestAgreeRow.real);
+      document.getElementById('best-synth').textContent = (RETRIEVER_LABEL[bestAgreeRow.synthetic] || bestAgreeRow.synthetic);
+      document.getElementById('best-note').textContent = bestAgreeRow.note;
+    }
+  }
+})();
+</script>
+</body>
+</html>

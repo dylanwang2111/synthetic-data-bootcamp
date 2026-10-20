@@ -1,28 +1,60 @@
-"""Retrieval primitives for Phase 9: BM25, a lightweight "dense" vector retriever,
+"""Retrieval primitives for Phase 9: BM25, a real semantic embedding retriever,
 reciprocal rank fusion, and the ranking metrics used to score them.
 
-No neural embedding model backs the dense retriever: installing sentence-transformers
-(which pulls in torch) was tried and timed out after 3 minutes in this sandboxed
-environment (see PLAN.md Phase 9's "Calibration note"). TF-IDF + cosine similarity is
-used instead -- a classic vector-space retriever, "dense" in the sense that query and
-document each become one fixed-length numeric vector compared by a single score,
-unlike BM25's sparse term-count scoring. This is a deliberate, documented
-simplification, not a silent substitution, and it needs only numpy.
+The semantic retriever is `fastembed` (ONNX Runtime, no torch) with
+`minishlab/potion-retrieval-32M`, a static embedding model distilled from a larger
+transformer (Model2Vec): embedding is a token lookup plus pooling, not a transformer
+forward pass, so it's genuinely semantic (trained to put related text nearby in
+vector space) without the per-query inference cost that comes with a full encoder.
+
+Two things were tried first and ruled out:
+- `sentence-transformers` (pulls in torch): installing it timed out after 3 minutes
+  in this sandboxed environment with no prior download cache.
+- `fastembed` with the default `BAAI/bge-small-en-v1.5` transformer model: it
+  installs fine (ONNX Runtime alone, ~20MB), but measured at ~9 texts/second on this
+  machine's 16 CPU cores -- fine for the ~1,300 synthetic chunks, but the real
+  6-company sample alone chunks into ~60,000 paragraphs, which would take roughly
+  two hours to embed. `potion-retrieval-32M` measured at ~1,900 texts/second on the
+  same corpus (no transformer layers to run at inference time), bringing that down
+  to well under a minute, with comparable semantic separation in a spot check
+  (query-answer cosine 0.62 vs. query-unrelated-text cosine 0.03).
+
+Calibration note: `fastembed==0.9.0` declares `huggingface-hub<2.0` but imports an
+internal module (`_snapshot_download`) that huggingface-hub removed in its 1.x
+release, so installing fastembed alone (which resolved huggingface-hub 1.33.0) broke
+on import. Fixed by pinning `huggingface-hub==0.36.2` in requirements.txt.
 """
 
 import math
 import re
-from collections import Counter
 
 import numpy as np
+from fastembed import TextEmbedding
 from rank_bm25 import BM25Okapi
 
 
 TOKEN_RE = re.compile(r"[a-z0-9]+")
+SEMANTIC_MODEL_NAME = "minishlab/potion-retrieval-32M"
+
+_model: TextEmbedding | None = None
+
+
+def _get_model() -> TextEmbedding:
+    """Load the embedding model once and reuse it across every retriever built."""
+    global _model
+    if _model is None:
+        _model = TextEmbedding(model_name=SEMANTIC_MODEL_NAME)
+    return _model
 
 
 def tokenize(text: str) -> list[str]:
     return TOKEN_RE.findall(text.lower())
+
+
+def _normalize(vectors: np.ndarray) -> np.ndarray:
+    norms = np.linalg.norm(vectors, axis=-1, keepdims=True)
+    norms[norms == 0] = 1.0
+    return vectors / norms
 
 
 class Bm25Retriever:
@@ -44,43 +76,18 @@ class Bm25Retriever:
         return float(max(scores)) if len(scores) else 0.0
 
 
-class TfidfRetriever:
-    """Pure-numpy TF-IDF vectors with cosine similarity; see module docstring."""
+class SemanticRetriever:
+    """Cosine similarity over real sentence embeddings; see module docstring."""
 
-    def __init__(self, chunk_ids: list[str], texts: list[str], max_vocab: int = 8000) -> None:
+    def __init__(self, chunk_ids: list[str], texts: list[str]) -> None:
         self.chunk_ids = chunk_ids
-        token_lists = [tokenize(t) for t in texts]
-
-        doc_freq: Counter = Counter()
-        for tokens in token_lists:
-            doc_freq.update(set(tokens))
-        # Sort by (-count, term) rather than Counter.most_common(): most_common()
-        # breaks count ties by insertion order, which depends on `set(tokens)`'s
-        # hash-randomized iteration order above and made the vocab (and therefore
-        # recall/MRR/nDCG) vary slightly between runs -- the ranking by count is
-        # deterministic, this just makes the tie-break deterministic too.
-        vocab = [term for term, _ in sorted(doc_freq.items(), key=lambda kv: (-kv[1], kv[0]))[:max_vocab]]
-        self.vocab_index = {term: i for i, term in enumerate(vocab)}
-
-        n_docs = len(texts)
-        self.idf = np.array(
-            [math.log((n_docs + 1) / (doc_freq[term] + 1)) + 1.0 for term in vocab],
-            dtype=np.float32,
-        )
-        self.doc_matrix = np.stack([self._vectorize(tokens) for tokens in token_lists])
-
-    def _vectorize(self, tokens: list[str]) -> np.ndarray:
-        vec = np.zeros(len(self.vocab_index), dtype=np.float32)
-        for term, count in Counter(tokens).items():
-            idx = self.vocab_index.get(term)
-            if idx is not None:
-                vec[idx] = (1.0 + math.log(count)) * self.idf[idx]
-        norm = np.linalg.norm(vec)
-        return vec / norm if norm > 0 else vec
+        embeddings = np.array(list(_get_model().embed(texts, batch_size=256)), dtype=np.float32)
+        self.doc_matrix = _normalize(embeddings)
 
     def rank(self, query: str) -> list[str]:
         """Return chunk_ids sorted best-first for `query`."""
-        q_vec = self._vectorize(tokenize(query))
+        q_vec = np.array(next(iter(_get_model().embed([query]))), dtype=np.float32)
+        q_vec = _normalize(q_vec[np.newaxis, :])[0]
         scores = self.doc_matrix @ q_vec
         order = np.argsort(-scores)
         return [self.chunk_ids[i] for i in order]

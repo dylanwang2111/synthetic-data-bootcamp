@@ -13,10 +13,9 @@ scenario (M&A, a product launch, a regulatory event, and so on) grounding their 
 something beyond generic sector boilerplate; the other 7 are an explicit ordinary-course baseline.
 All 20 pass every automatic validation gate (`data/synthetic/`, `data/validation_report.csv`),
 `data/index.csv` indexes both corpora (one `source` column, `real` or `synthetic`),
-`data/qa_pairs.csv` / `data/retrieval_eval.csv` hold 124 QA pairs and BM25/TF-IDF/hybrid retrieval
+`data/qa_pairs.csv` / `data/retrieval_eval.csv` hold 124 QA pairs and BM25/semantic/hybrid retrieval
 scores across three experiments, and `data/gap_report.csv` quantifies how synthetic differs from
-real (shorter, more numerically dense, same top retriever but not the same full ranking). See
-`PLAN.md` for detail.
+real (shorter, more numerically dense, same full retriever ranking). See `PLAN.md` for detail.
 
 ## Layout
 
@@ -42,9 +41,9 @@ src/
   step09_validate_filings.py  automatic validation gates: numeric, leaks, headings (Phase 7)
   step10_build_pdfs.py        renders each filing (real-style cover + Items 1/1A/1C/7/8) to a PDF
   chunks.py                   shared paragraph-level chunking of index.csv's item files (Phase 9)
-  retrieval.py                BM25, TF-IDF "dense" retriever, reciprocal rank fusion, metrics (Phase 9)
+  retrieval.py                BM25, a real semantic embedding retriever, reciprocal rank fusion, metrics (Phase 9)
   step11_make_qa.py           data/qa_pairs.csv: synthetic (deterministic) + real (hand-authored) QA (Phase 9)
-  step12_evaluate_retrievers.py  data/retrieval_eval.csv: BM25/TF-IDF/hybrid x 3 experiments (Phase 9)
+  step12_evaluate_retrievers.py  data/retrieval_eval.csv: BM25/semantic/hybrid x 3 experiments (Phase 9)
   step13_gap_report.py        data/gap_report.csv: length, vocab, numbers, retriever ranking (Phase 10)
 data/
   sp500_constituents.csv frozen S&P 500 snapshot src.step00_sample_companies samples from (committed)
@@ -64,6 +63,7 @@ data/
   retrieval_eval.csv      recall@5/@10, MRR, nDCG@10 per retriever x experiment (committed)
   gap_report.csv          12 rows: section length, vocabulary, number density, retriever ranking (committed)
 logs/                    per-script log files
+dashboard/index.html    standalone results dashboard: reads the four data/*.csv above at load time
 ```
 
 ## Setup
@@ -274,12 +274,13 @@ python -m src.step12_evaluate_retrievers
   same sample Phase 7's model-judged review used). Every answer is verified as a verbatim substring
   of its gold passage before being written; the script hard-fails if one isn't found.
 - `step12_evaluate_retrievers.py` writes `data/retrieval_eval.csv` (committed): recall@5, recall@10,
-  MRR, and nDCG@10 for BM25, a TF-IDF "dense" retriever (no neural embedding model — see `PLAN.md`
-  Phase 9 for why), and their reciprocal-rank-fusion hybrid, across three experiments
-  (`synthetic_only`, `real_only`, `mixed`).
-- See `PLAN.md` Phase 9 for the full results table and what they mean (short version: BM25 clearly
-  beats the TF-IDF retriever on the real sample's much longer documents; the two are comparable on
-  synthetic).
+  MRR, and nDCG@10 for BM25, a real semantic embedding retriever (`fastembed` +
+  `minishlab/potion-retrieval-32M` — see `PLAN.md` Phase 9 for why that model specifically), and
+  their reciprocal-rank-fusion hybrid, across three experiments (`synthetic_only`, `real_only`,
+  `mixed`).
+- See `PLAN.md` Phase 9 for the full results table and what they mean (short version: BM25 edges
+  out the semantic retriever on all three experiments, but the gap is much smaller on the real
+  sample than an earlier TF-IDF version showed).
 
 ## Quantify the synthetic-vs-real gap (Phase 10)
 
@@ -294,8 +295,21 @@ python -m src.step13_gap_report
   elsewhere) since none of those need the dense-vector corpus's matrix.
 - Short version (see `PLAN.md` Phase 10 for the full table and caveats): synthetic sections run
   3.6%-31.2% of real's median length per item; synthetic narrative states 2-3x more numbers per
-  1,000 words than real's more qualitative MD&A prose; the best retriever (BM25) agrees between
-  real and synthetic, but the full three-way retriever ranking doesn't.
+  1,000 words than real's more qualitative MD&A prose; the full three-way retriever ranking
+  (`bm25`, `hybrid_rrf`, `semantic`) agrees between real and synthetic.
+
+## View the results dashboard
+
+```bash
+cd implementations/sec_10k_corpus && python -m http.server
+```
+
+Then open `http://localhost:8000/dashboard/`. `dashboard/index.html` is a standalone static page
+(vanilla JS + d3, no build step) that fetches `data/validation_report.csv`, `data/qa_pairs.csv`,
+`data/retrieval_eval.csv`, and `data/gap_report.csv` directly at load time and renders every KPI,
+table, and chart from them — nothing on the page is hand-typed, so it always reflects whatever is
+currently in those four files. A plain `file://` open won't work: browsers block a local page from
+fetching other local files, which is what the `http.server` step above is for.
 
 ## Render fictional filings as PDFs (optional)
 

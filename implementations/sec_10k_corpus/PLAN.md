@@ -21,7 +21,7 @@ a real-data benchmark.
 | - | Narrative generation (Phase 6) | Done: 20/20 companies, 100 files; see "Phase 6" |
 | - | Validation gates (Phase 7) | Automatic and model-judged done, 0 failures; human review open |
 | - | Same-layout index (Phase 8) | Done: one `data/index.csv`, `source` column distinguishes real/synthetic |
-| - | QA, retrieval evaluation (Phase 9) | Done: 124 QA pairs, BM25/TF-IDF/hybrid x 3 experiments |
+| - | QA, retrieval evaluation (Phase 9) | Done: 124 QA pairs, BM25/semantic/hybrid x 3 experiments |
 | - | Synthetic-vs-real gap report (Phase 10) | Done: best retriever agrees (BM25); length/vocab/numbers differ |
 
 ### Downloaded data
@@ -393,52 +393,67 @@ a real-data benchmark.
     effect is to slightly understate recall, not overstate it.
 - **Retrieval (`src/retrieval.py`) and evaluation (`src/step12_evaluate_retrievers.py`) —
   `data/retrieval_eval.csv`.**
-  - **BM25** via `rank-bm25`. **"Dense"**: TF-IDF vectors (log-scaled term frequency x log IDF,
-    L2-normalized, cosine similarity via plain numpy), capped at an 8,000-term vocabulary. Not a
-    neural embedding — `sentence-transformers` (which pulls in `torch`) was tried and timed out
-    after 3 minutes in this sandboxed environment with no prior download cache. TF-IDF is a real,
-    if dated, vector-space retriever and needed no new heavy dependency; documented here as a
-    deliberate substitution, not a silent one. **Hybrid**: reciprocal rank fusion of the two
-    (`k=60`).
-  - **Calibration note:** an early version picked the TF-IDF vocabulary via
-    `Counter.most_common()`, which breaks count ties by first-insertion order into the counter —
-    and that order depended on `set(tokens)`'s hash-randomized iteration order, so two runs over
-    the *identical* corpus produced slightly different vocabularies (terms right at the 8,000-term
-    cutoff swapped) and therefore slightly different recall/MRR numbers each run. A reproducible
-    evaluation can't have that. Fixed by sorting candidates by `(-count, term)` explicitly instead
-    of relying on `most_common()`'s tie-break; verified by running the full evaluation twice and
-    diffing `retrieval_eval.csv` byte-for-byte (identical).
+  - **BM25** via `rank-bm25`. **Semantic**: real sentence embeddings via `fastembed` (ONNX Runtime,
+    no torch) with `minishlab/potion-retrieval-32M`, a *static* embedding model distilled from a
+    larger transformer (Model2Vec) — embedding is a token lookup plus pooling, not a transformer
+    forward pass, so it's genuinely semantic without per-query transformer inference cost. Cosine
+    similarity over L2-normalized vectors, plain numpy. **Hybrid**: reciprocal rank fusion of the
+    two (`k=60`).
+  - **Calibration note, round 1 (vocabulary determinism):** an early version used a TF-IDF "dense"
+    retriever instead (log-scaled term frequency x log IDF, capped at an 8,000-term vocabulary) —
+    not a neural embedding, since `sentence-transformers` (pulls in `torch`) was tried first and
+    timed out after 3 minutes in this sandboxed environment with no prior download cache. That
+    TF-IDF version picked its vocabulary via `Counter.most_common()`, which breaks count ties by
+    first-insertion order into the counter — an order that depended on `set(tokens)`'s
+    hash-randomized iteration, so two runs over the *identical* corpus produced slightly different
+    vocabularies and therefore slightly different recall/MRR each run. Fixed at the time by sorting
+    candidates by `(-count, term)` explicitly; verified by diffing two full runs byte-for-byte.
+  - **Calibration note, round 2 (replacing TF-IDF with a real embedding model):** TF-IDF worked but
+    was lexical, not semantic, and it collapsed badly on the real corpus (recall@5 0.08 — see the
+    superseded numbers this replaced, in git history). Revisited after torch was ruled out:
+    `fastembed` needs only ONNX Runtime (~20MB) and was tried with its default transformer model,
+    `BAAI/bge-small-en-v1.5` — installs fine, but measured at ~9 texts/second on this machine's 16
+    cores. The real 6-company sample alone chunks into ~60,000 paragraphs (`real_only` and `mixed`
+    both embed it), which would take roughly two hours at that rate. Switched to
+    `minishlab/potion-retrieval-32M` (a static, non-transformer embedding model): ~1,900
+    texts/second on the same corpus, under a minute end to end, with comparable semantic
+    separation in a spot check (query-answer cosine 0.62 vs. query-unrelated-text cosine 0.03). Hit
+    one more snag along the way: `fastembed==0.9.0` declares `huggingface-hub<2.0` but imports an
+    internal module (`_snapshot_download`) that huggingface-hub removed in its 1.x release, so a
+    plain `pip install fastembed` resolved huggingface-hub 1.33.0 and broke on import; fixed by
+    pinning `huggingface-hub==0.36.2` in `requirements.txt`.
   - **Metrics:** recall@5, recall@10, MRR, nDCG@10 (binary relevance, one gold chunk per question).
   - **Experiments.** `synthetic_only` (112 Qs against the 20 synthetic companies' chunks),
     `real_only` (12 Qs against the same 6 real sample companies' chunks — not all 50 real
-    companies/150 filings: a brute-force TF-IDF matrix over the full real corpus would need tens
-    of thousands of paragraphs and a correspondingly large dense matrix, with no
-    approximate-nearest-neighbor library installed to make that cheap), `mixed` (all 124 Qs against
-    the union of both).
+    companies/150 filings, which would mean embedding on the order of 500,000 paragraphs), `mixed`
+    (all 124 Qs against the union of both).
   - **Result** (`data/retrieval_eval.csv`):
 
     | experiment | retriever | n | recall@5 | recall@10 | MRR | nDCG@10 |
     |---|---|---|---|---|---|---|
     | synthetic_only | bm25 | 112 | 0.50 | 0.56 | 0.44 | 0.46 |
-    | synthetic_only | tfidf_dense | 112 | 0.50 | 0.56 | 0.44 | 0.46 |
-    | synthetic_only | hybrid_rrf | 112 | 0.49 | 0.56 | 0.44 | 0.46 |
+    | synthetic_only | semantic | 112 | 0.47 | 0.52 | 0.40 | 0.42 |
+    | synthetic_only | hybrid_rrf | 112 | 0.47 | 0.54 | 0.44 | 0.46 |
     | real_only | bm25 | 12 | 0.50 | 0.58 | 0.29 | 0.36 |
-    | real_only | tfidf_dense | 12 | 0.08 | 0.17 | 0.06 | 0.08 |
-    | real_only | hybrid_rrf | 12 | 0.17 | 0.33 | 0.20 | 0.22 |
+    | real_only | semantic | 12 | 0.33 | 0.33 | 0.21 | 0.23 |
+    | real_only | hybrid_rrf | 12 | 0.33 | 0.42 | 0.23 | 0.27 |
     | mixed | bm25 | 124 | 0.49 | 0.51 | 0.41 | 0.43 |
-    | mixed | tfidf_dense | 124 | 0.36 | 0.37 | 0.34 | 0.34 |
-    | mixed | hybrid_rrf | 124 | 0.38 | 0.41 | 0.36 | 0.36 |
+    | mixed | semantic | 124 | 0.44 | 0.44 | 0.36 | 0.37 |
+    | mixed | hybrid_rrf | 124 | 0.44 | 0.47 | 0.40 | 0.41 |
 
-    BM25 clearly beats TF-IDF on the real sample (0.50 vs 0.08 recall@5) but the two are about even
-    on synthetic. The real companies' items run to hundreds or thousands of paragraphs each (USB's
-    item 7 alone chunks into ~1,070), against tens per synthetic company; BM25's length
-    normalization and term-frequency saturation evidently holds up much better than a fixed
-    8,000-term TF-IDF vector space does as the candidate pool grows. Hybrid RRF sits *below*
-    BM25 alone on `real_only` and `mixed` — equal-weight fusion with a much weaker second ranking
-    pulls the combined result down, not up, when the two retrievers aren't close in quality. Take
-    the `real_only` numbers directionally, not precisely: n=12 means one question's outcome moves
-    recall@5 by ~8 points. None of this is Phase 10's synthetic-vs-real comparison (which asks
-    whether a *ranking* agrees across corpora, a different question) — that's still open.
+    BM25 beats the semantic retriever on all three experiments, but nowhere near as dramatically as
+    TF-IDF's collapse on `real_only` (0.50 vs. 0.33 recall@5, not 0.50 vs. 0.08) — a real embedding
+    model generalizes far better to the real corpus's longer, more varied documents than a
+    fixed-vocabulary lexical vector did, even though it's still a lighter, distilled model rather
+    than a full transformer encoder. BM25's edge makes sense for this task specifically: the QA
+    pairs are precise fact lookups (a dollar figure, a company name, a date), where exact lexical
+    matching is a strong baseline, and a static embedding model trades some of a full encoder's
+    nuance for its ~200x speed advantage. Hybrid RRF again sits at or slightly below BM25 alone —
+    equal-weight fusion with a second ranking that's consistently weaker pulls the combined result
+    down, not up. Take the `real_only` numbers directionally, not precisely: n=12 means one
+    question's outcome moves recall@5 by ~8 points. None of this is Phase 10's synthetic-vs-real
+    comparison (which asks whether a *ranking* agrees across corpora, a different question) — that's
+    still open.
 
 ### Phase 10: Synthetic-vs-real gap report — done
 
@@ -479,17 +494,18 @@ already produced (`data/index.csv`, `data/retrieval_eval.csv`) rather than recom
    (synthetic, n=112) — not directly comparable in absolute terms, since BM25's IDF term depends on
    each corpus's own size and term statistics, and the real sample's 6 companies chunk into far more
    paragraphs than all 20 synthetic companies combined. The more decision-relevant question is
-   retriever **ranking**: by recall@10, `synthetic_only` ranks retrievers `[bm25, tfidf_dense,
-   hybrid_rrf]` and `real_only` ranks them `[bm25, hybrid_rrf, tfidf_dense]` — **the best retriever
-   agrees (BM25 in both)**, but the full three-way order doesn't (TF-IDF and the hybrid swap
-   second/third place).
+   retriever **ranking**: by recall@10, both `synthetic_only` and `real_only` rank retrievers the
+   same way — `[bm25, hybrid_rrf, semantic]` — **the full three-way order agrees**, not just the top
+   choice. (With the superseded TF-IDF retriever, only the top choice agreed; the full order didn't
+   — see the Phase 9 "Calibration note, round 2" above. Swapping in a real embedding model changed
+   this result, not just the retriever's own numbers.)
 
-**Verdict:** synthetic is a reasonable proxy for *which retriever to pick* (the top choice agrees)
-and for exercising the retrieval/evaluation pipeline end to end, but not a proxy for realistic
-document length, numeric density, or absolute retrieval-score magnitude — all three differ by a
-large, now-quantified margin. Anyone using this corpus for retriever benchmarking should treat
-synthetic results as directional for retriever choice, not as an estimate of real-world recall or
-score values.
+**Verdict:** synthetic is a reasonable proxy for *which retriever to pick* — here, the full ranking
+agrees, not just the top choice — and for exercising the retrieval/evaluation pipeline end to end.
+It is not a proxy for realistic document length, numeric density, or absolute retrieval-score
+magnitude — all three differ by a large, now-quantified margin. Anyone using this corpus for
+retriever benchmarking should treat synthetic results as directional for retriever choice, not as
+an estimate of real-world recall or score values.
 
 ### Command sequence (once built)
 
@@ -534,9 +550,11 @@ python -m src.step13_gap_report        # done: data/gap_report.csv (Phase 10)
    companies x sections.
 4. **Calibration scope — resolved:** generic calibration, generic fictional companies (not
    fictional banks). See Phase 3 and "Calibration profile" above.
-5. **Embedding model — resolved:** TF-IDF + cosine similarity (plain numpy), not a neural
-   embedding — installing `sentence-transformers` (pulls in `torch`) timed out after 3 minutes in
-   this sandboxed environment. See Phase 9.
+5. **Embedding model — resolved:** `fastembed` (ONNX Runtime, no torch) with
+   `minishlab/potion-retrieval-32M`, a static embedding model distilled from a larger transformer —
+   `sentence-transformers` (pulls in `torch`) timed out installing, and fastembed's own default
+   transformer model was too slow at the real corpus's scale (~9 texts/second would mean ~2 hours
+   for the real sample alone). See Phase 9.
 6. **Sharing the raw data — resolved:** published as a public GitHub Release asset
    (`data-v1`, `sec10k_raw_fy2023-2025.tar.gz` + a SHA-256 manifest).
 7. **Repository visibility — resolved:** the GitHub repo is public; confirmed intended.
