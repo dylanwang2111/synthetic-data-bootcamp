@@ -22,7 +22,53 @@ a real-data benchmark.
 | - | Validation gates (Phase 7) | Automatic and model-judged done, 0 failures; human review open |
 | - | Same-layout index (Phase 8) | Done: one `data/index.csv`, `source` column distinguishes real/synthetic |
 | - | QA, retrieval evaluation (Phase 9) | Done: 124 QA pairs, BM25/semantic/hybrid x 3 experiments |
-| - | Synthetic-vs-real gap report (Phase 10) | Done: best retriever agrees (BM25); length/vocab/numbers differ |
+| - | Synthetic-vs-real gap report (Phase 10) | Done: full retriever ranking agrees; length/vocab/numbers differ |
+| - | Privacy: distance from real template (Phase 11) | Done: no company's financials sit within 5% of its template on every field |
+
+## Evaluation framework: fidelity, utility, privacy
+
+A synthetic corpus built to stand in for real 10-Ks has to answer three separate questions, and
+the dashboard (`dashboard/index.html`) is organized around them rather than around the phases that
+produced the numbers (phases map onto these three unevenly — Phase 7 alone spans two of them):
+
+- **Fidelity** — does it look and compute like a real 10-K? Structural fidelity (required
+  statement headings, substantive section length, internal numeric consistency between narrative
+  and financials — Phase 7's `required_headings`/`substantive`/`numeric_consistency`/
+  `scenario_grounding` checks) and distributional fidelity (section length, vocabulary overlap,
+  numeric density vs. the real corpus — Phase 10's gap report).
+- **Utility** — is it actually useful for the task it exists to support (building and evaluating a
+  retrieval benchmark)? Phase 9's QA pairs and recall@5/@10/MRR/nDCG@10 scores are the benchmark
+  itself; Phase 10's retriever-ranking-agreement check is the validation that conclusions drawn from
+  the synthetic corpus (e.g. "BM25 beats this embedding model here") transfer to the real one.
+- **Privacy** — since every fictional company is templated on one real company, does the corpus
+  avoid exposing that real company? Two checks, both from Phase 7 and the new Phase 11: no real
+  company name or ticker ever appears in the narrative (`real_company_leak`, 0 found across 373
+  checks), and no fictional company's financials are close enough to its real template's to make the
+  disguise pointless (`step14_privacy_check.py` — median 20.0% absolute difference per field across
+  all 20 companies; closest single company, BIDZ, still differs by a 4.1% median and an 8.2% max
+  across its 6 fields; no company is within 5% on every field).
+
+### Phase 11: Privacy — distance from each fictional company's real template
+
+`src/step14_privacy_check.py` writes `data/privacy_report.csv`, 112 rows (one per fictional company
+per financial field: total assets, total liabilities, stockholders' equity, revenues, net income,
+operating income where present). For each row it looks up the real template's actual same-year
+value directly from `data/calibration.json`'s `company_years` (written by `step05_make_calibration`
+from XBRL, before any fictional company existed) and computes the percent difference from the
+fictional value.
+
+- **Why this check and not just the leak check:** Phase 7's `real_company_leak` check already
+  confirms no real company's *name* or *ticker* appears in the narrative, but that alone doesn't
+  rule out the fictional numbers simply being the real company's own numbers relabeled — which would
+  make the fictional company a disguise, not a synthetic one. This check answers that directly.
+- **Result:** median absolute difference per field, across all 112 rows, is 20.0%. Every company has
+  at least one field that differs substantially (max per-company difference ranges from 8.2%, BIDZ,
+  to 113.1%, NDE — the latter because NDE's scenario deliberately gives it a small *positive* equity
+  cushion where its real template, AutoZone, actually carries deeply negative equity). The closest
+  individual field found anywhere is NDE's revenue, 0.5% from AutoZone's actual FY2025 revenue — a
+  coincidence of where the calibration sampling landed on that one field, not a pattern: NDE's other
+  four fields differ by 7.4%-113.1%, and no company is close on every field. Reported honestly rather
+  than smoothed over, since a single close field is a legitimate thing a privacy audit should surface.
 
 ### Downloaded data
 
@@ -525,6 +571,7 @@ python -m src.step10_build_pdfs        # done (ad hoc; renders each filing to a 
 python -m src.step11_make_qa           # done: 124 QA pairs (Phase 9)
 python -m src.step12_evaluate_retrievers  # done: data/retrieval_eval.csv (Phase 9)
 python -m src.step13_gap_report        # done: data/gap_report.csv (Phase 10)
+python -m src.step14_privacy_check     # done: data/privacy_report.csv (Phase 11)
 ```
 
 ### Risks

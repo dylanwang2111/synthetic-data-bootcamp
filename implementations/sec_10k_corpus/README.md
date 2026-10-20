@@ -5,17 +5,18 @@ is the real-data side of a synthetic-10-K benchmark: it provides style templates
 set, and XBRL facts.
 
 **Status:** Steps 1-5 (project setup, 10-K download, section parsing, metadata index, XBRL
-companyfacts) and Phases 3-10 (calibration profile, fictional-company specs, a scenario per
+companyfacts) and Phases 3-11 (calibration profile, fictional-company specs, a scenario per
 company, financial statements, narrative generation, validation, same-layout index, QA and
-retrieval evaluation, synthetic-vs-real gap report) are all implemented — every planned phase
-except Phase 7's human review, which needs an actual person. 13/20 fictional companies have a
-scenario (M&A, a product launch, a regulatory event, and so on) grounding their narrative in
-something beyond generic sector boilerplate; the other 7 are an explicit ordinary-course baseline.
-All 20 pass every automatic validation gate (`data/synthetic/`, `data/validation_report.csv`),
-`data/index.csv` indexes both corpora (one `source` column, `real` or `synthetic`),
-`data/qa_pairs.csv` / `data/retrieval_eval.csv` hold 124 QA pairs and BM25/semantic/hybrid retrieval
-scores across three experiments, and `data/gap_report.csv` quantifies how synthetic differs from
-real (shorter, more numerically dense, same full retriever ranking). See `PLAN.md` for detail.
+retrieval evaluation, synthetic-vs-real gap report, privacy check) are all implemented — every
+planned phase except Phase 7's human review, which needs an actual person. The evaluation is
+organized around three questions (see "Evaluation framework" in `PLAN.md`): **fidelity** (does it
+look and compute like a real 10-K — `data/validation_report.csv`, `data/gap_report.csv`),
+**utility** (is it actually useful for building a retrieval benchmark —
+`data/qa_pairs.csv`/`data/retrieval_eval.csv`, and whether retriever ranking transfers to the real
+corpus), and **privacy** (no real company name/ticker leak, and no fictional company's financials
+sit close enough to its real template to make the disguise pointless —
+`data/privacy_report.csv`). See `PLAN.md` for detail, or `dashboard/index.html` for all of it laid
+out.
 
 ## Layout
 
@@ -45,6 +46,7 @@ src/
   step11_make_qa.py           data/qa_pairs.csv: synthetic (deterministic) + real (hand-authored) QA (Phase 9)
   step12_evaluate_retrievers.py  data/retrieval_eval.csv: BM25/semantic/hybrid x 3 experiments (Phase 9)
   step13_gap_report.py        data/gap_report.csv: length, vocab, numbers, retriever ranking (Phase 10)
+  step14_privacy_check.py     data/privacy_report.csv: distance from each company's real template (Phase 11)
 data/
   sp500_constituents.csv frozen S&P 500 snapshot src.step00_sample_companies samples from (committed)
   raw/{ticker}/{fy}/     10k.htm, 10k.txt, ex13_*.htm (if any), metadata.json
@@ -62,6 +64,7 @@ data/
   qa_pairs.csv            124 QA pairs (112 synthetic, 12 real), one row per question (committed)
   retrieval_eval.csv      recall@5/@10, MRR, nDCG@10 per retriever x experiment (committed)
   gap_report.csv          12 rows: section length, vocabulary, number density, retriever ranking (committed)
+  privacy_report.csv      112 rows: each company's financials vs. its real template's actual values (committed)
 logs/                    per-script log files
 dashboard/index.html    standalone results dashboard: reads the four data/*.csv above at load time
 ```
@@ -298,6 +301,21 @@ python -m src.step13_gap_report
   1,000 words than real's more qualitative MD&A prose; the full three-way retriever ranking
   (`bm25`, `hybrid_rrf`, `semantic`) agrees between real and synthetic.
 
+## Check privacy: distance from each company's real template (Phase 11)
+
+```bash
+python -m src.step14_privacy_check
+```
+
+- Writes `data/privacy_report.csv` (committed): for each fictional company and each financial
+  field, the percent difference between the fictional value and its real template's actual
+  same-year value (from `data/calibration.json`, written before any fictional company existed).
+  Answers a question Phase 7's name/ticker leak check doesn't: even with no literal leak, are the
+  fictional numbers just the real company's own numbers relabeled?
+- Short version (see `PLAN.md` Phase 11 for the full per-company breakdown): median absolute
+  difference per field is 20.0% across all 20 companies; no company is within 5% of its template on
+  every field.
+
 ## View the results dashboard
 
 ```bash
@@ -306,10 +324,12 @@ cd implementations/sec_10k_corpus && python -m http.server
 
 Then open `http://localhost:8000/dashboard/`. `dashboard/index.html` is a standalone static page
 (vanilla JS + d3, no build step) that fetches `data/validation_report.csv`, `data/qa_pairs.csv`,
-`data/retrieval_eval.csv`, and `data/gap_report.csv` directly at load time and renders every KPI,
-table, and chart from them — nothing on the page is hand-typed, so it always reflects whatever is
-currently in those four files. A plain `file://` open won't work: browsers block a local page from
-fetching other local files, which is what the `http.server` step above is for.
+`data/retrieval_eval.csv`, `data/gap_report.csv`, and `data/privacy_report.csv` directly at load
+time and renders every KPI, table, and chart from them — nothing on the page is hand-typed, so it
+always reflects whatever is currently in those five files. It's organized around the three
+questions a synthetic corpus has to answer (see "Evaluation framework" in `PLAN.md`): fidelity,
+utility, and privacy. A plain `file://` open won't work: browsers block a local page from fetching
+other local files, which is what the `http.server` step above is for.
 
 ## Render fictional filings as PDFs (optional)
 
@@ -337,8 +357,8 @@ python -m src.step10_build_pdfs
   45-75 MB per filing, mostly images and XBRL data files.
 - Git tracks `metadata.json` files, `data/download_status.csv`, `data/parse_status.csv`,
   `data/companyfacts_status.csv`, `data/calibration.json`, `data/synthetic/`,
-  `data/validation_report.csv`, `data/qa_pairs.csv`, `data/retrieval_eval.csv`, and
-  `data/gap_report.csv`. The filing and
+  `data/validation_report.csv`, `data/qa_pairs.csv`, `data/retrieval_eval.csv`,
+  `data/gap_report.csv`, and `data/privacy_report.csv`. The filing and
   section text (`10k.htm`, `10k.txt`, `ex13_*`, `data/parsed/`), `data/companyfacts/*.json`,
   `data/index.csv`, `data/pdf_reports/`, and `logs/` are git-ignored, and are all reproducible by
   re-running the matching script.
