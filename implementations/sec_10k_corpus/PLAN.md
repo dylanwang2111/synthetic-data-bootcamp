@@ -632,7 +632,12 @@ python -m src.step15_build_dashboard   # done: dashboard/index.html (ad hoc; emb
    transformer model was too slow at the real corpus's scale (~9 texts/second would mean ~2 hours
    for the real sample alone). See Phase 9.
 6. **Sharing the raw data — resolved:** published as a public GitHub Release asset
-   (`data-v1`, `sec10k_raw_fy2023-2025.tar.gz` + a SHA-256 manifest).
+   (`data-v1`, `sec10k_raw_fy2023-2025.tar.gz` + a SHA-256 manifest). `data/companyfacts/*.json`
+   (184MB, git-ignored for the same reason) is shared the same way: `companyfacts-v1`,
+   `sec10k_companyfacts.tar.gz` (13MB gzipped) + `manifest.sha256` inside the tarball +
+   `SHA256SUMS.txt` of the tarball itself — `gh release download companyfacts-v1 -R
+   dylanwang2111/synthetic-data-bootcamp -p "sec10k_companyfacts.tar.gz"`, then
+   `tar -xzf sec10k_companyfacts.tar.gz -C data`.
 7. **Repository visibility — resolved:** the GitHub repo is public; confirmed intended.
 8. **Leftover folders:** `data/raw/` now has two generations of superseded company-years that are
    deliberately left alone (not deleted, not reparsed, not in `config.yaml`'s company list):

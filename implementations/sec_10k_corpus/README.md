@@ -52,7 +52,10 @@ data/
   sp500_constituents.csv frozen S&P 500 snapshot src.step00_sample_companies samples from (committed)
   raw/{ticker}/{fy}/     10k.htm, 10k.txt, ex13_*.htm (if any), metadata.json
   parsed/{ticker}/{fy}/  item_1.txt, item_1a.txt, item_1c.txt, item_7.txt, item_8.txt
-  companyfacts/{ticker}.json   raw XBRL companyfacts per company (git-ignored, ~180 MB)
+  companyfacts/{ticker}.json   raw XBRL companyfacts per company (git-ignored, ~180 MB; prebuilt
+                               copy: `gh release download companyfacts-v1 -R
+                               dylanwang2111/synthetic-data-bootcamp -p "sec10k_companyfacts.tar.gz"`,
+                               then `tar -xzf sec10k_companyfacts.tar.gz -C data`)
   calibration.json       percentile distributions and per-company-year records (committed)
   index.csv              one row per parsed section, real + synthetic (git-ignored, reproduce when needed)
   download_status.csv    one row per company-year from the last download run
