@@ -355,6 +355,26 @@ cd implementations/sec_10k_corpus && python -m http.server
 
 then open `http://localhost:8000/dashboard/template.html`.
 
+## Try the RAG chatbot demo (ad hoc)
+
+```bash
+python -m src.chatbot            # interactive chat
+python -m src.chatbot --demo     # scripted scenario-analysis walkthrough
+```
+
+`src/chatbot.py` is a small demo app on top of Phase 9's retrievers: BM25 + the real
+semantic embedding retriever (`src.retrieval`, fastembed / `minishlab/potion-retrieval-32M`),
+fused via reciprocal rank fusion, over the 20 synthetic companies. `--demo` asks one
+analytical question per scenario company (13 of them — M&A, margin crisis, cash burn,
+regulatory pressure, ...), shows that company's scenario summary from its `spec.json`,
+and reports whether retrieval actually lands on the scenario-grounded passage (checked
+against `data/qa_pairs.csv`'s `gold_chunk_id`) rather than just a keyword-overlapping one.
+
+Retrieval works with no setup. If `ANTHROPIC_API_KEY` is set, answers are synthesized by
+Claude from the retrieved passages (with citations); without it, the chatbot falls back to
+showing the top-retrieved passage itself, the same "retrieval needs no key, generation
+does" split as `step08_generate_filings.py`.
+
 ## Render fictional filings as PDFs (optional)
 
 ```bash
