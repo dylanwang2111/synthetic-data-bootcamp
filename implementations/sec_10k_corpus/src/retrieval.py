@@ -23,10 +23,23 @@ Calibration note: `fastembed==0.9.0` declares `huggingface-hub<2.0` but imports 
 internal module (`_snapshot_download`) that huggingface-hub removed in its 1.x
 release, so installing fastembed alone (which resolved huggingface-hub 1.33.0) broke
 on import. Fixed by pinning `huggingface-hub==0.36.2` in requirements.txt.
+
+Persisting the embeddings: `SemanticRetriever`'s `cache_path` loads/saves the
+embedding matrix as a plain `.npz` (numpy's native archive) -- no new dependency, and
+the right size for this corpus (~1,300 chunks): a real vector DB (FAISS, Chroma, ...)
+would add an approximate index meant for millions of vectors, when this project
+already does brute-force cosine search on purpose (see above). The cache stores a
+sha256 of the embedded texts alongside the matrix, so a corpus change invalidates it
+automatically rather than silently serving stale embeddings -- a one-shot script like
+step12_evaluate_retrievers doesn't need this (it embeds once and exits), but a
+long-lived process restarted often (src.chatbot_server) would otherwise re-embed
+every restart for no reason.
 """
 
+import hashlib
 import math
 import re
+from pathlib import Path
 
 import numpy as np
 from fastembed import TextEmbedding
@@ -37,6 +50,37 @@ TOKEN_RE = re.compile(r"[a-z0-9]+")
 SEMANTIC_MODEL_NAME = "minishlab/potion-retrieval-32M"
 
 _model: TextEmbedding | None = None
+
+
+def _content_hash(texts: list[str]) -> str:
+    h = hashlib.sha256()
+    for t in texts:
+        h.update(t.encode("utf-8"))
+        h.update(b"\x00")
+    return h.hexdigest()
+
+
+def _load_cache(path: Path, chunk_ids: list[str], texts: list[str]) -> np.ndarray | None:
+    """Return the cached doc_matrix if `path` exists and matches chunk_ids/texts
+    exactly, else None (missing, corrupt, or stale -- all treated as a cache miss)."""
+    if not path.exists():
+        return None
+    try:
+        data = np.load(path, allow_pickle=False)
+        if data["content_hash"].item() != _content_hash(texts):
+            return None
+        if list(data["chunk_ids"]) != chunk_ids:
+            return None
+        return data["doc_matrix"]
+    except Exception:
+        return None
+
+
+def _save_cache(path: Path, chunk_ids: list[str], texts: list[str], doc_matrix: np.ndarray) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.stem + ".tmp.npz")  # numpy appends .npz unless the name already ends with it
+    np.savez(tmp, chunk_ids=np.array(chunk_ids), content_hash=np.array(_content_hash(texts)), doc_matrix=doc_matrix)
+    tmp.replace(path)
 
 
 def _get_model() -> TextEmbedding:
@@ -77,12 +121,25 @@ class Bm25Retriever:
 
 
 class SemanticRetriever:
-    """Cosine similarity over real sentence embeddings; see module docstring."""
+    """Cosine similarity over real sentence embeddings; see module docstring.
 
-    def __init__(self, chunk_ids: list[str], texts: list[str]) -> None:
+    Pass `cache_path` to persist the embedding matrix as a .npz and skip
+    re-embedding on the next construction with the same chunk_ids/texts (see the
+    module docstring's "Persisting the embeddings" note).
+    """
+
+    def __init__(self, chunk_ids: list[str], texts: list[str], cache_path: Path | None = None) -> None:
         self.chunk_ids = chunk_ids
+        cached = _load_cache(cache_path, chunk_ids, texts) if cache_path is not None else None
+        if cached is not None:
+            self.doc_matrix = cached
+            self.loaded_from_cache = True
+            return
         embeddings = np.array(list(_get_model().embed(texts, batch_size=256)), dtype=np.float32)
         self.doc_matrix = _normalize(embeddings)
+        self.loaded_from_cache = False
+        if cache_path is not None:
+            _save_cache(cache_path, chunk_ids, texts, self.doc_matrix)
 
     def rank(self, query: str) -> list[str]:
         """Return chunk_ids sorted best-first for `query`."""

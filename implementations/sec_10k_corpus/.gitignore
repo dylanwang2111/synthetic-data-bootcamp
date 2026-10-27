@@ -8,6 +8,9 @@ data/raw/**/*.tmp
 data/parsed/*
 !data/parsed/.gitkeep
 data/index.csv
+# Cached semantic embeddings for src.chatbot / src.chatbot_server (see
+# src.retrieval's module docstring); regenerated automatically, content-hash checked.
+data/semantic_embeddings_cache.npz
 # Companyfacts JSON is large (about 180 MB) and can be re-downloaded with
 # src.step04_fetch_companyfacts. calibration.json, computed from it, is small and kept.
 data/companyfacts/*.json

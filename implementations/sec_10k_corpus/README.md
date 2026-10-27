@@ -376,6 +376,12 @@ generation does" split as `step08_generate_filings.py`. Put a key in a gitignore
 file in this directory (`DEEPSEEK_API_KEY=sk-...`), or export it in your shell; either way,
 never commit it.
 
+The semantic retriever's embeddings are cached to `data/semantic_embeddings_cache.npz`
+(git-ignored, numpy's native archive format — a real vector DB would be overkill at this
+corpus's size; see `src.retrieval`'s module docstring) so a restart of `chatbot_server.py`
+doesn't re-embed all 1,272 chunks every time. The cache stores a sha256 of the embedded
+texts, so it's invalidated automatically if the synthetic corpus changes.
+
 **Command line:**
 
 ```bash
