@@ -600,6 +600,7 @@ python -m src.step11_make_qa           # done: 130 QA pairs (Phase 9)
 python -m src.step12_evaluate_retrievers  # done: data/retrieval_eval.csv (Phase 9)
 python -m src.step13_gap_report        # done: data/gap_report.csv (Phase 10)
 python -m src.step14_privacy_check     # done: data/privacy_report.csv (Phase 11)
+python -m src.step15_build_dashboard   # done: dashboard/index.html (ad hoc; embeds the 5 result CSVs)
 ```
 
 ### Risks
